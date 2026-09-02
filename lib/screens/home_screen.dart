@@ -50,7 +50,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+class _HomeScreenState extends State<HomeScreen> {
   late final ApiService _api;
   late final SipService _sip;
   late final PushService _push;
@@ -64,112 +64,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   List<AcessoPortao> _historicoAcessos = [];
   bool _carregandoBotoes = true;
   bool _callScreenAberta = false;
-  bool _chamadaEmSegundoPlano = false;
-  Future<void>? _handoffEmAndamento;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _api = ApiService(widget.conta.painelUrl);
     _sip = SipService();
     _sip.addListener(_onSipChange);
     _push = PushService(api: _api, conta: widget.conta);
-    ForegroundService.aoLiberarHandoff(_aoLigacaoSegundoPlanoTerminar);
     _iniciar();
   }
 
-  /// App minimizado/fechado: cede o registro SIP pro SipTaskHandler (só
-  /// áudio, sem tela) continuar recebendo chamada mesmo se o Android matar
-  /// o app depois. App voltando: retoma no SipService normal (com
-  /// vídeo/DTMF). Só troca fora de uma ligação ativa — trocar no meio
-  /// derrubaria a chamada em andamento.
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.paused:
-      case AppLifecycleState.detached:
-        if (!_sip.emChamada) {
-          _handoffEmAndamento = _encadearHandoff(_cederSipParaSegundoPlano);
-        }
-        break;
-      case AppLifecycleState.resumed:
-        _handoffEmAndamento = _encadearHandoff(_retomarSipEmPrimeiroPlano);
-        break;
-      default:
-        break;
-    }
-  }
-
-  /// Garante que só um handoff (ceder/retomar) rode por vez — sem isso,
-  /// pausas/retomadas em sequência rápida (ex: vários diálogos de permissão
-  /// abrindo e fechando um atrás do outro logo depois da instalação) disparam
-  /// vários handoffs concorrentes, cada um achando que é o único, e a mesma
-  /// corrida de registro duplicado volta a acontecer — só que entre dois
-  /// handoffs nossos em vez de entre pausa/retomada isolada.
-  Future<void> _encadearHandoff(Future<void> Function() acao) async {
-    final anterior = _handoffEmAndamento;
-    if (anterior != null) {
-      await anterior.catchError((_) {});
-    }
-    await acao();
-  }
-
-  /// Espera o SipService desregistrar de vez (unregister, não só fechar o
-  /// socket) antes de deixar o SipTaskHandler registrar — se os dois lados
-  /// ficarem registrados ao mesmo tempo, mesmo que por um instante, o
-  /// Asterisk toca a chamada pros dois contatos (PJSIP_DIAL_CONTACTS) e cada
-  /// um cria sua própria conexão de Telecom; a que "perde" fica presa (nunca
-  /// é encerrada por ninguém) e trava o roteamento de áudio do celular
-  /// inteiro até forçar parar/desinstalar o app.
-  Future<void> _cederSipParaSegundoPlano() async {
-    await _sip.desconectar();
-    await ForegroundService.assumirSip();
-  }
-
-  /// Mesma lógica do método acima, na direção contrária: espera o
-  /// SipTaskHandler desregistrar de vez antes do SipService voltar a
-  /// registrar — mas só se ele não estiver com uma ligação em andamento
-  /// (ver comentário grande em ForegroundService.devolverSip()).
-  Future<void> _retomarSipEmPrimeiroPlano() async {
-    final liberado = await ForegroundService.devolverSip();
-    if (!liberado) {
-      if (mounted) setState(() => _chamadaEmSegundoPlano = true);
-      return;
-    }
-    if (mounted) setState(() => _chamadaEmSegundoPlano = false);
-    if (!_sip.isRegistered) {
-      await _sip.conectar(widget.conta);
-    }
-  }
-
-  /// Chamado pelo ForegroundService quando uma ligação em segundo plano que
-  /// tinha recusado o handoff finalmente termina — sem isso, abrir o app no
-  /// meio dessa ligação deixava o SipService da tela principal nunca mais
-  /// registrado (ninguém tentava de novo depois que ela acabava).
-  void _aoLigacaoSegundoPlanoTerminar() {
-    if (!mounted || !_chamadaEmSegundoPlano) return;
-    setState(() => _chamadaEmSegundoPlano = false);
-    if (!_sip.isRegistered) {
-      unawaited(_sip.conectar(widget.conta));
+  /// Pede as permissões que exigem uma Activity visível (mic, câmera, tela
+  /// cheia do CallKit) — normalmente sempre tem uma aqui (é o fluxo comum de
+  /// abrir o app), mas se o engine persistente for recriado do zero em
+  /// segundo plano (ex: Android matou o processo inteiro e o
+  /// PersistentEngineService reiniciou sozinho antes do usuário abrir o app
+  /// de novo), pedir permissão sem Activity lança erro — não pode deixar
+  /// isso abortar o resto de _iniciar() e travar o registro SIP.
+  Future<void> _pedirPermissoesDeMidia() async {
+    try {
+      final micStatus = await Permission.microphone.request();
+      if (!mounted) return;
+      if (!micStatus.isGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Permissão de microfone negada — as chamadas não vão funcionar até você liberar nas configurações do celular.',
+            ),
+            duration: Duration(seconds: 6),
+          ),
+        );
+      }
+      await Permission.camera.request();
+      unawaited(SipService.solicitarPermissaoTelaCheia());
+    } catch (_) {
+      // Sem Activity anexada agora — segue sem pedir; o SipService ainda
+      // registra com o que já estiver concedido de uma sessão anterior.
     }
   }
 
   Future<void> _iniciar() async {
-    final micStatus = await Permission.microphone.request();
+    await _pedirPermissoesDeMidia();
     if (!mounted) return;
-    if (!micStatus.isGranted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Permissão de microfone negada — as chamadas não vão funcionar até você liberar nas configurações do celular.',
-          ),
-          duration: Duration(seconds: 6),
-        ),
-      );
-    }
-    await Permission.camera.request();
-    unawaited(SipService.solicitarPermissaoTelaCheia());
     unawaited(
       _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
     );
@@ -213,10 +150,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // plano — não deve travar o login por causa disso.
     }
 
-    // Cobre o caso de abrir o app do zero bem no meio de uma ligação que já
-    // estava sendo atendida em segundo plano (ex: tocando com app fechado) —
-    // sem essa checagem os dois lados registravam ao mesmo tempo.
-    await _retomarSipEmPrimeiroPlano();
+    // Um único SipService, sempre o mesmo objeto, com ou sem tela visível —
+    // o PersistentEngineService só mantém o processo/engine vivo, não existe
+    // mais handoff entre dois registros pra fazer aqui.
+    if (!_sip.isRegistered) {
+      await _sip.conectar(widget.conta);
+    }
   }
 
   void _onSipChange() {
@@ -332,8 +271,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    ForegroundService.pararDeEscutarLiberacao();
     _sip.removeListener(_onSipChange);
     _sip.dispose();
     _push.dispose();
@@ -609,40 +546,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ),
             ),
           ),
-          if (_chamadaEmSegundoPlano)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Material(
-                color: Colors.blueGrey.shade700,
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.phone_in_talk, color: Colors.white),
-                      const SizedBox(width: 10),
-                      const Expanded(
-                        child: Text(
-                          'Ligação em segundo plano (só áudio)',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Desligar',
-                        onPressed: ForegroundService.desligarChamadaSegundoPlano,
-                        icon: const Icon(Icons.call_end, color: Colors.redAccent),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
           if (_sip.emChamada && !_callScreenAberta)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
