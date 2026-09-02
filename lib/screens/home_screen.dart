@@ -1,0 +1,1054 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:sip_ua/sip_ua.dart';
+
+import '../models/acesso_portao.dart';
+import '../models/app_button.dart';
+import '../models/aviso.dart';
+import '../models/branding.dart';
+import '../models/documento.dart';
+import '../models/manutencao.dart';
+import '../services/api_service.dart';
+import '../services/foreground_service.dart';
+import '../services/push_service.dart';
+import '../services/session_service.dart';
+import '../services/sip_service.dart';
+import '../services/theme_service.dart';
+import '../theme/app_colors.dart';
+import 'agendamentos_screen.dart';
+import 'apartamentos_screen.dart';
+import 'call_screen.dart';
+import 'cameras_screen.dart';
+import 'dialpad_screen.dart';
+import 'documentos_screen.dart';
+import 'emergencia_screen.dart';
+import 'encomendas_screen.dart';
+import 'historico_acessos_screen.dart';
+import 'interfonia_screen.dart';
+import 'login_screen.dart';
+import 'manutencoes_screen.dart';
+import 'moradores_facial_screen.dart';
+import 'mural_screen.dart';
+import 'ouvidoria_screen.dart';
+import 'salas_conferencia_screen.dart';
+import 'visitantes_qr_screen.dart';
+
+class HomeScreen extends StatefulWidget {
+  final SipAccount conta;
+  final ThemeService themeService;
+
+  const HomeScreen({
+    super.key,
+    required this.conta,
+    required this.themeService,
+  });
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
+  late final ApiService _api;
+  late final SipService _sip;
+  late final PushService _push;
+
+  Branding _branding = Branding.fallback();
+  List<AppButton> _botoes = [];
+  List<String> _apartamentos = [];
+  List<Aviso> _avisos = [];
+  List<Manutencao> _manutencoes = [];
+  List<Documento> _documentos = [];
+  List<AcessoPortao> _historicoAcessos = [];
+  bool _carregandoBotoes = true;
+  bool _callScreenAberta = false;
+  bool _chamadaEmSegundoPlano = false;
+  Future<void>? _handoffEmAndamento;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _api = ApiService(widget.conta.painelUrl);
+    _sip = SipService();
+    _sip.addListener(_onSipChange);
+    _push = PushService(api: _api, conta: widget.conta);
+    ForegroundService.aoLiberarHandoff(_aoLigacaoSegundoPlanoTerminar);
+    _iniciar();
+  }
+
+  /// App minimizado/fechado: cede o registro SIP pro SipTaskHandler (só
+  /// áudio, sem tela) continuar recebendo chamada mesmo se o Android matar
+  /// o app depois. App voltando: retoma no SipService normal (com
+  /// vídeo/DTMF). Só troca fora de uma ligação ativa — trocar no meio
+  /// derrubaria a chamada em andamento.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        if (!_sip.emChamada) {
+          _handoffEmAndamento = _encadearHandoff(_cederSipParaSegundoPlano);
+        }
+        break;
+      case AppLifecycleState.resumed:
+        _handoffEmAndamento = _encadearHandoff(_retomarSipEmPrimeiroPlano);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /// Garante que só um handoff (ceder/retomar) rode por vez — sem isso,
+  /// pausas/retomadas em sequência rápida (ex: vários diálogos de permissão
+  /// abrindo e fechando um atrás do outro logo depois da instalação) disparam
+  /// vários handoffs concorrentes, cada um achando que é o único, e a mesma
+  /// corrida de registro duplicado volta a acontecer — só que entre dois
+  /// handoffs nossos em vez de entre pausa/retomada isolada.
+  Future<void> _encadearHandoff(Future<void> Function() acao) async {
+    final anterior = _handoffEmAndamento;
+    if (anterior != null) {
+      await anterior.catchError((_) {});
+    }
+    await acao();
+  }
+
+  /// Espera o SipService desregistrar de vez (unregister, não só fechar o
+  /// socket) antes de deixar o SipTaskHandler registrar — se os dois lados
+  /// ficarem registrados ao mesmo tempo, mesmo que por um instante, o
+  /// Asterisk toca a chamada pros dois contatos (PJSIP_DIAL_CONTACTS) e cada
+  /// um cria sua própria conexão de Telecom; a que "perde" fica presa (nunca
+  /// é encerrada por ninguém) e trava o roteamento de áudio do celular
+  /// inteiro até forçar parar/desinstalar o app.
+  Future<void> _cederSipParaSegundoPlano() async {
+    await _sip.desconectar();
+    await ForegroundService.assumirSip();
+  }
+
+  /// Mesma lógica do método acima, na direção contrária: espera o
+  /// SipTaskHandler desregistrar de vez antes do SipService voltar a
+  /// registrar — mas só se ele não estiver com uma ligação em andamento
+  /// (ver comentário grande em ForegroundService.devolverSip()).
+  Future<void> _retomarSipEmPrimeiroPlano() async {
+    final liberado = await ForegroundService.devolverSip();
+    if (!liberado) {
+      if (mounted) setState(() => _chamadaEmSegundoPlano = true);
+      return;
+    }
+    if (mounted) setState(() => _chamadaEmSegundoPlano = false);
+    if (!_sip.isRegistered) {
+      await _sip.conectar(widget.conta);
+    }
+  }
+
+  /// Chamado pelo ForegroundService quando uma ligação em segundo plano que
+  /// tinha recusado o handoff finalmente termina — sem isso, abrir o app no
+  /// meio dessa ligação deixava o SipService da tela principal nunca mais
+  /// registrado (ninguém tentava de novo depois que ela acabava).
+  void _aoLigacaoSegundoPlanoTerminar() {
+    if (!mounted || !_chamadaEmSegundoPlano) return;
+    setState(() => _chamadaEmSegundoPlano = false);
+    if (!_sip.isRegistered) {
+      unawaited(_sip.conectar(widget.conta));
+    }
+  }
+
+  Future<void> _iniciar() async {
+    final micStatus = await Permission.microphone.request();
+    if (!mounted) return;
+    if (!micStatus.isGranted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Permissão de microfone negada — as chamadas não vão funcionar até você liberar nas configurações do celular.',
+          ),
+          duration: Duration(seconds: 6),
+        ),
+      );
+    }
+    await Permission.camera.request();
+    unawaited(SipService.solicitarPermissaoTelaCheia());
+    unawaited(
+      _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
+    );
+
+    final branding = await _api
+        .fetchBranding(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => Branding.fallback());
+    final resultado = await _api
+        .fetchBotoes(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => (botoes: <AppButton>[], apartamentos: <String>[]));
+    final avisos = await _api
+        .fetchAvisos(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => <Aviso>[]);
+    final manutencoes = await _api
+        .fetchManutencoes(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => <Manutencao>[]);
+    final documentos = await _api
+        .fetchDocumentos(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => <Documento>[]);
+    final historicoAcessos = await _api
+        .fetchHistoricoAcessos(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => <AcessoPortao>[]);
+
+    if (!mounted) return;
+    setState(() {
+      _branding = branding;
+      _botoes = resultado.botoes;
+      _apartamentos = resultado.apartamentos;
+      _avisos = avisos;
+      _manutencoes = manutencoes;
+      _documentos = documentos;
+      _historicoAcessos = historicoAcessos;
+      _carregandoBotoes = false;
+    });
+
+    try {
+      await ForegroundService.start(ramal: widget.conta.ramal);
+      unawaited(ForegroundService.requestIgnoreBatteryOptimizations());
+    } catch (_) {
+      // Sem o serviço de segundo plano o registro ainda funciona em primeiro
+      // plano — não deve travar o login por causa disso.
+    }
+
+    // Cobre o caso de abrir o app do zero bem no meio de uma ligação que já
+    // estava sendo atendida em segundo plano (ex: tocando com app fechado) —
+    // sem essa checagem os dois lados registravam ao mesmo tempo.
+    await _retomarSipEmPrimeiroPlano();
+  }
+
+  void _onSipChange() {
+    if (!mounted) return;
+    setState(() {});
+
+    final call = _sip.activeCall;
+    if (call != null && _sip.emChamada && !_callScreenAberta) {
+      final entrante = call.session.direction == Direction.incoming;
+      _abrirTelaChamada(entrante);
+    }
+  }
+
+  /// Também chamado pelo banner "voltar pra ligação" — se o usuário sair da
+  /// CallScreen pelo botão voltar do Android com a ligação ainda ativa (ex:
+  /// pra checar outra tela), nada de novo acontece no SipService (sem
+  /// notifyListeners), então _onSipChange nunca dispara de novo sozinho e a
+  /// ligação ficava inacessível até desligar ou o outro lado desligar.
+  void _abrirTelaChamada(bool entrante) {
+    _callScreenAberta = true;
+    Navigator.of(context)
+        .push(
+          MaterialPageRoute(
+            builder: (_) => CallScreen(
+              sip: _sip,
+              botoesDtmf: _botoes
+                  .where((b) => b.tipo == AppButtonType.dtmf)
+                  .toList(),
+              chamadaEntrante: entrante,
+              api: _api,
+              conta: widget.conta,
+            ),
+          ),
+        )
+        .then((_) => setState(() => _callScreenAberta = false));
+  }
+
+  Future<void> _tocarBotao(AppButton botao, {bool video = false}) async {
+    try {
+      if (botao.tipo == AppButtonType.discar) {
+        if (botao.destino == null || botao.destino!.isEmpty) return;
+        if (!_sip.isRegistered) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Ainda não registrado no servidor (status: ${_statusRegistro()}). Aguarde e tente de novo.',
+              ),
+            ),
+          );
+          return;
+        }
+        await _sip.ligarPara(botao.destino!, video: video);
+      } else {
+        if (_sip.emChamada) {
+          _sip.enviarDtmf(botao.dtmfDigitos ?? '');
+        } else {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Esse botão só funciona durante uma chamada ativa.',
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao executar o botão: $e'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    }
+  }
+
+  Future<void> _sair() async {
+    await _sip.desconectar();
+    await ForegroundService.stop();
+    await SessionService().clear();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => LoginScreen(themeService: widget.themeService),
+      ),
+    );
+  }
+
+  String _statusRegistro() {
+    switch (_sip.registrationState) {
+      case RegistrationStateEnum.REGISTERED:
+        return 'Online';
+      case RegistrationStateEnum.REGISTRATION_FAILED:
+        return 'Falha ao conectar';
+      case RegistrationStateEnum.UNREGISTERED:
+        return 'Desconectado';
+      default:
+        return 'Conectando…';
+    }
+  }
+
+  Color _corStatus() {
+    switch (_sip.registrationState) {
+      case RegistrationStateEnum.REGISTERED:
+        return Colors.green;
+      case RegistrationStateEnum.REGISTRATION_FAILED:
+        return Colors.red;
+      default:
+        return Colors.orange;
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    ForegroundService.pararDeEscutarLiberacao();
+    _sip.removeListener(_onSipChange);
+    _sip.dispose();
+    _push.dispose();
+    super.dispose();
+  }
+
+  void _mostrarNotificacaoPrimeiroPlano(RemoteMessage mensagem) {
+    if (!mounted) return;
+    final notificacao = mensagem.notification;
+    if (notificacao != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '${notificacao.title ?? ''}: ${notificacao.body ?? ''}',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+
+    // Com o app aberto, o FCM só entrega a mensagem — não atualiza a tela
+    // sozinho. Recarrega a lista certa conforme o "tipo" mandado pelo backend.
+    switch (mensagem.data['tipo']) {
+      case 'mural':
+        unawaited(_recarregarAvisos());
+        break;
+      case 'chamada':
+        _reconectarSipSeNecessario();
+        break;
+    }
+  }
+
+  /// Chamada chegando (avisado por push, ver fcm_avisar_chamada_async no
+  /// servidor) — reconecta o SIP na hora se a conexão tiver caído em segundo
+  /// plano, em vez de esperar a próxima tentativa automática do sip_ua.
+  void _reconectarSipSeNecessario() {
+    if (!_sip.isRegistered) {
+      unawaited(_sip.conectar(widget.conta));
+    }
+  }
+
+  Future<void> _recarregarAvisos() async {
+    final avisos = await _api
+        .fetchAvisos(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => <Aviso>[]);
+    if (!mounted) return;
+    setState(() => _avisos = avisos);
+  }
+
+  void _abrirDiscador() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => DialpadScreen(sip: _sip)));
+  }
+
+  void _abrirApartamentos() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            ApartamentosScreen(sip: _sip, apartamentos: _apartamentos),
+      ),
+    );
+  }
+
+  void _abrirInterfonia() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => InterfoniaScreen(
+          api: _api,
+          conta: widget.conta,
+          sip: _sip,
+        ),
+      ),
+    );
+  }
+
+  void _abrirCameras() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CamerasScreen(api: _api, conta: widget.conta),
+      ),
+    );
+  }
+
+  void _abrirEmergencia() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EmergenciaScreen(
+          api: _api,
+          conta: widget.conta,
+          branding: _branding,
+        ),
+      ),
+    );
+  }
+
+  void _abrirManutencoes() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ManutencoesScreen(manutencoes: _manutencoes),
+      ),
+    );
+  }
+
+  void _abrirOuvidoria() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => OuvidoriaScreen(
+          api: _api,
+          conta: widget.conta,
+          apartamentos: _apartamentos,
+        ),
+      ),
+    );
+  }
+
+  void _abrirEncomendas() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EncomendasScreen(api: _api, conta: widget.conta),
+      ),
+    );
+  }
+
+  void _abrirDocumentos() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DocumentosScreen(documentos: _documentos),
+      ),
+    );
+  }
+
+  Future<void> _abrirHistoricoAcessos() async {
+    // Recarrega na hora de abrir — a lista pré-carregada na Home pode estar
+    // desatualizada (eventos de acesso/facial não disparam notificação push
+    // pra não gerar spam a cada identificação; então é aqui que atualiza).
+    final historicoAcessos = await _api
+        .fetchHistoricoAcessos(widget.conta.ramal, widget.conta.senha)
+        .catchError((_) => _historicoAcessos);
+    if (mounted) setState(() => _historicoAcessos = historicoAcessos);
+
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => HistoricoAcessosScreen(acessos: _historicoAcessos),
+      ),
+    );
+  }
+
+  void _abrirVisitantesQr() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => VisitantesQrScreen(api: _api, conta: widget.conta),
+      ),
+    );
+  }
+
+  void _abrirCadastroFacial() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            MoradoresFacialScreen(api: _api, conta: widget.conta),
+      ),
+    );
+  }
+
+  void _abrirSalasConferencia() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SalasConferenciaScreen(
+          api: _api,
+          conta: widget.conta,
+          sip: _sip,
+        ),
+      ),
+    );
+  }
+
+  void _abrirAgendamentos() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AgendamentosScreen(api: _api, conta: widget.conta),
+      ),
+    );
+  }
+
+  void _abrirMural() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => MuralScreen(avisos: _avisos)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).extension<AppColors>()!;
+    final botoesDiscar = _botoes
+        .where((b) => b.tipo == AppButtonType.discar)
+        .toList();
+
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _abrirDiscador,
+        icon: const Icon(Icons.dialpad),
+        label: const Text('Discar'),
+      ),
+      appBar: AppBar(
+        elevation: 0,
+        title: Row(
+          children: [
+            if (_branding.logoUrl != null) ...[
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  _branding.logoUrl!,
+                  height: 28,
+                  errorBuilder: (_, _, _) => const SizedBox(),
+                ),
+              ),
+              const SizedBox(width: 10),
+            ],
+            Text(
+              _branding.appNome,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+        actions: [
+          IconButton(
+            tooltip: widget.themeService.isDark ? 'Tema claro' : 'Tema escuro',
+            onPressed: () => widget.themeService.alternar(),
+            icon: Icon(
+              widget.themeService.isDark
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+            ),
+          ),
+          IconButton(onPressed: _sair, icon: const Icon(Icons.logout)),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: _corStatus().withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(
+                    color: _corStatus().withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.circle, size: 10, color: _corStatus()),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${_statusRegistro()} — Ramal ${widget.conta.ramal}',
+                      style: TextStyle(
+                        color: _corStatus(),
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_chamadaEmSegundoPlano)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Material(
+                color: Colors.blueGrey.shade700,
+                borderRadius: BorderRadius.circular(14),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_in_talk, color: Colors.white),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Ligação em segundo plano (só áudio)',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Desligar',
+                        onPressed: ForegroundService.desligarChamadaSegundoPlano,
+                        icon: const Icon(Icons.call_end, color: Colors.redAccent),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_sip.emChamada && !_callScreenAberta)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Material(
+                color: Colors.green,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => _abrirTelaChamada(
+                    _sip.activeCall?.session.direction == Direction.incoming,
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.call, color: Colors.white),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Ligação em andamento — toque para voltar',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _abrirEmergencia,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.isDark
+                      ? Colors.redAccent.shade100
+                      : Colors.red.shade700,
+                  side: BorderSide(
+                    color: Colors.redAccent.withValues(alpha: 0.5),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+                icon: const Icon(Icons.warning_amber_rounded),
+                label: const Text(
+                  'Emergência',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: _carregandoBotoes
+                ? const Center(child: CircularProgressIndicator())
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                    children: [
+                      Text(
+                        'AÇÕES RÁPIDAS',
+                        style: TextStyle(
+                          color: colors.textMuted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 3,
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                        childAspectRatio: 0.92,
+                        children: [
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.home_rounded,
+                            cor: colors.tileAccents[0],
+                            titulo: 'Apartamentos',
+                            subtitulo: _apartamentos.isNotEmpty
+                                ? '${_apartamentos.length}'
+                                : null,
+                            onTap: _apartamentos.isNotEmpty
+                                ? _abrirApartamentos
+                                : null,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.videocam_rounded,
+                            cor: colors.tileAccents[1],
+                            titulo: 'Câmeras',
+                            onTap: _abrirCameras,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.campaign_rounded,
+                            cor: colors.tileAccents[2],
+                            titulo: 'Mural',
+                            subtitulo: _avisos.isNotEmpty
+                                ? '${_avisos.length}'
+                                : null,
+                            onTap: _abrirMural,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.build_circle_outlined,
+                            cor: colors.tileAccents[3],
+                            titulo: 'Manutenções',
+                            subtitulo: _manutencoes.isNotEmpty
+                                ? '${_manutencoes.length}'
+                                : null,
+                            onTap: _abrirManutencoes,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.forum_outlined,
+                            cor: colors.tileAccents[4],
+                            titulo: 'Ouvidoria',
+                            onTap: _abrirOuvidoria,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.inventory_2_outlined,
+                            cor: colors.tileAccents[5],
+                            titulo: 'Encomendas',
+                            onTap: _abrirEncomendas,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.description_outlined,
+                            cor: colors.tileAccents[6],
+                            titulo: 'Documentos',
+                            subtitulo: _documentos.isNotEmpty
+                                ? '${_documentos.length}'
+                                : null,
+                            onTap: _abrirDocumentos,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.door_front_door_outlined,
+                            cor: colors.tileAccents[7],
+                            titulo: 'Acessos',
+                            subtitulo: _historicoAcessos.isNotEmpty
+                                ? '${_historicoAcessos.length}'
+                                : null,
+                            onTap: _abrirHistoricoAcessos,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.qr_code_2_rounded,
+                            cor: colors.tileAccents[8],
+                            titulo: 'Visitantes',
+                            onTap: _abrirVisitantesQr,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.pool_rounded,
+                            cor: colors.tileAccents[9],
+                            titulo: 'Agendamentos',
+                            onTap: _abrirAgendamentos,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.phone_in_talk_outlined,
+                            cor: colors.tileAccents[1],
+                            titulo: 'Interfonia',
+                            onTap: _abrirInterfonia,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.face_retouching_natural_rounded,
+                            cor: colors.tileAccents[6],
+                            titulo: 'Cadastro Facial',
+                            onTap: _abrirCadastroFacial,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.groups_rounded,
+                            cor: colors.tileAccents[7],
+                            titulo: 'Reuniões',
+                            onTap: _abrirSalasConferencia,
+                          ),
+                        ],
+                      ),
+                      if (botoesDiscar.isNotEmpty) ...[
+                        const SizedBox(height: 20),
+                        Text(
+                          'Ramais',
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: colors.textMuted,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        const SizedBox(height: 8),
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                                childAspectRatio: 0.85,
+                              ),
+                          itemCount: botoesDiscar.length,
+                          itemBuilder: (context, i) {
+                            final b = botoesDiscar[i];
+                            return _cardBotao(
+                              context,
+                              colors: colors,
+                              icone: b.icone,
+                              titulo: b.nome,
+                              onTapChamada: () => _tocarBotao(b),
+                              onTapVideo: () => _tocarBotao(b, video: true),
+                            );
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tileAcaoRapida(
+    BuildContext context, {
+    required AppColors colors,
+    required IconData icone,
+    required Color cor,
+    required String titulo,
+    String? subtitulo,
+    VoidCallback? onTap,
+  }) {
+    final desabilitado = onTap == null;
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.tileBackground,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: cor.withValues(alpha: desabilitado ? 0.08 : 0.35),
+        ),
+        boxShadow: desabilitado || !colors.tileGlow
+            ? null
+            : [
+                BoxShadow(
+                  color: cor.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  spreadRadius: -2,
+                ),
+              ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: cor.withValues(alpha: desabilitado ? 0.08 : 0.16),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    icone,
+                    color: desabilitado ? cor.withValues(alpha: 0.4) : cor,
+                    size: 17,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  titulo,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 11,
+                    color: desabilitado ? colors.textMuted : colors.textBright,
+                  ),
+                ),
+                if (subtitulo != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitulo,
+                    style: TextStyle(
+                      color: cor,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cardBotao(
+    BuildContext context, {
+    required AppColors colors,
+    required String? icone,
+    required String titulo,
+    VoidCallback? onTap,
+    VoidCallback? onTapChamada,
+    VoidCallback? onTapVideo,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.tileBackground,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.brandAccent.withValues(alpha: 0.25)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(18),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: colors.brandAccent.withValues(alpha: 0.16),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      icone ?? '🔘',
+                      style: const TextStyle(fontSize: 22),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  titulo,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: colors.textBright,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                if (onTapChamada != null && onTapVideo != null) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      IconButton(
+                        tooltip: 'Chamada normal',
+                        onPressed: onTapChamada,
+                        icon: const Icon(Icons.call),
+                      ),
+                      IconButton(
+                        tooltip: 'Chamada de vídeo',
+                        onPressed: onTapVideo,
+                        icon: const Icon(Icons.videocam),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

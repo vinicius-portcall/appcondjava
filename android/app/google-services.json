@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "556323368923",
+    "project_id": "portchat-46646",
+    "storage_bucket": "portchat-46646.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:556323368923:android:fb716cd006c4efa62481fe",
+        "android_client_info": {
+          "package_name": "br.com.portcall.portcall_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCyPRmrT-gy-wxfpC0tOvHVtsaLsx1NOus"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:556323368923:android:dcd49ebe12e778fa2481fe",
+        "android_client_info": {
+          "package_name": "br.com.portcallvoip.portchat"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCyPRmrT-gy-wxfpC0tOvHVtsaLsx1NOus"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
