@@ -64,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<AcessoPortao> _historicoAcessos = [];
   bool _carregandoBotoes = true;
   bool _callScreenAberta = false;
+  late final AppLifecycleListener _lifecycleListener;
 
   @override
   void initState() {
@@ -72,6 +73,13 @@ class _HomeScreenState extends State<HomeScreen> {
     _sip = SipService();
     _sip.addListener(_onSipChange);
     _push = PushService(api: _api, conta: widget.conta);
+    // Com o engine persistente (ver PersistentEngineService), o app pode
+    // ficar "aberto" (registrado, vivo) por dias sem nunca reiniciar de
+    // verdade — _iniciar() só roda uma vez por vida do engine. Sem recarregar
+    // ao voltar pro primeiro plano, uma mudança de botão/DTMF no painel (ex:
+    // trocar o dígito do portão) nunca aparece no app até alguém forçar
+    // parar e reabrir.
+    _lifecycleListener = AppLifecycleListener(onResume: _recarregarDados);
     _iniciar();
   }
 
@@ -104,13 +112,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Future<void> _iniciar() async {
-    await _pedirPermissoesDeMidia();
-    if (!mounted) return;
-    unawaited(
-      _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
-    );
-
+  Future<void> _recarregarDados() async {
     final branding = await _api
         .fetchBranding(widget.conta.ramal, widget.conta.senha)
         .catchError((_) => Branding.fallback());
@@ -141,6 +143,17 @@ class _HomeScreenState extends State<HomeScreen> {
       _historicoAcessos = historicoAcessos;
       _carregandoBotoes = false;
     });
+  }
+
+  Future<void> _iniciar() async {
+    await _pedirPermissoesDeMidia();
+    if (!mounted) return;
+    unawaited(
+      _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
+    );
+
+    await _recarregarDados();
+    if (!mounted) return;
 
     try {
       await ForegroundService.start(ramal: widget.conta.ramal);
@@ -271,6 +284,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    _lifecycleListener.dispose();
     _sip.removeListener(_onSipChange);
     _sip.dispose();
     _push.dispose();
