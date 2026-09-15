@@ -1,5 +1,6 @@
 class Branding {
   final String appNome;
+  final String? condominioNome;
   final String? logoUrl;
   final String? sipServidorPadrao;
   final String? sipPortaPadrao;
@@ -8,6 +9,7 @@ class Branding {
 
   const Branding({
     required this.appNome,
+    this.condominioNome,
     this.logoUrl,
     this.sipServidorPadrao,
     this.sipPortaPadrao,
@@ -22,6 +24,9 @@ class Branding {
       appNome: (json['app_nome'] as String?)?.trim().isNotEmpty == true
           ? json['app_nome']
           : 'Portcall',
+      condominioNome: (json['condominio_nome'] as String?)?.trim().isNotEmpty == true
+          ? json['condominio_nome']
+          : null,
       logoUrl: json['logo_url'] as String?,
       sipServidorPadrao: json['sip_servidor'] as String?,
       sipPortaPadrao: json['sip_porta'] as String?,

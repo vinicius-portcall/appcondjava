@@ -33,6 +33,15 @@ class SIPUAWebSocketImpl {
             protocols: protocols, headers: webSocketSettings.extraHeaders);
       }
 
+      // Sem isso, uma conexão que morre em silêncio (NAT de rede móvel
+      // derrubando o mapeamento depois de ociosa por horas, ex.: madrugada
+      // sem uso) nunca dispara onDone/onClose — o socket local segue achando
+      // que está tudo bem, o REGISTER a cada 60s "escreve" sem erro aparente,
+      // e a reconexão automática do SocketTransport nunca chega a rodar.
+      // pingInterval faz o próprio dart:io detectar isso e fechar o socket
+      // sozinho quando não recebe pong a tempo, liberando o onClose normal.
+      _socket!.pingInterval = const Duration(seconds: 20);
+
       onOpen?.call();
       _socket!.listen((dynamic data) {
         onMessage?.call(data);

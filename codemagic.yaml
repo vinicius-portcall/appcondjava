@@ -1,0 +1,95 @@
+workflows:
+  ios-testflight:
+    name: iOS - build e TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      groups:
+        - appstore_credentials # criar esse grupo no Codemagic com as chaves abaixo
+      vars:
+        BUNDLE_ID: "br.com.portcall.portcallApp"
+        XCODE_WORKSPACE: "ios/Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: br.com.portcall.portcallApp
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: Buscar certificado e perfil de provisionamento
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Instalar dependências Flutter
+        script: |
+          flutter packages pub get
+      - name: Build iOS (release, assinado)
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      email:
+        recipients:
+          - vinigato021@gmail.com
+        notify:
+          success: true
+          failure: true
+      app_store_connect:
+        auth: integration # usa a integração "App Store Connect" configurada no painel do Codemagic
+        submit_to_testflight: true
+        beta_groups:
+          - Testadores Portcall
+
+  ios-adhoc-sem-conta-apple:
+    name: iOS - build ad-hoc (sem TestFlight)
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        XCODE_WORKSPACE: "ios/Runner.xcworkspace"
+        XCODE_SCHEME: "Runner"
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: br.com.portcall.portcallApp
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Buscar certificado e perfil ad-hoc
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_ADHOC \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Instalar dependências Flutter
+        script: |
+          flutter packages pub get
+      - name: Build iOS (release, ad-hoc)
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      email:
+        recipients:
+          - vinigato021@gmail.com
+        notify:
+          success: true
+          failure: true

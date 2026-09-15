@@ -505,9 +505,26 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: 10),
             ],
-            Text(
-              _branding.appNome,
-              style: const TextStyle(fontWeight: FontWeight.w600),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _branding.appNome,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (_branding.condominioNome != null)
+                  Text(
+                    _branding.condominioNome!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.onSurface.withValues(alpha: 0.6),
+                    ),
+                  ),
+              ],
             ),
           ],
         ),

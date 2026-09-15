@@ -26,6 +26,16 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Usado para ler o QR code de cadastro do ramal e para o cadastro facial.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Necessário para o áudio das chamadas do interfone.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Usado para escolher uma foto no cadastro facial.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

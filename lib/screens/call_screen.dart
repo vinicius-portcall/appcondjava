@@ -38,11 +38,26 @@ class _CallScreenState extends State<CallScreen> {
   int _remoteVideoTracksAnexado = -1;
   Timer? _pollParticipantes;
   int? _participantes;
+  late final AppLifecycleListener _lifecycleListener;
 
   @override
   void initState() {
     super.initState();
     widget.sip.addListener(_onSipChange);
+    // O pop automático (_onSipChange) roda mesmo com o app em segundo
+    // plano, mas sem uma Activity/Surface anexada o Flutter não chega a
+    // desenhar o frame que aplicaria esse pop — a tela fica "presa" até
+    // algo forçar uma nova checagem. Reconferir ao voltar pro primeiro
+    // plano cobre exatamente o caso relatado: ligação que termina (do outro
+    // lado) com o app fechado/tela apagada.
+    _lifecycleListener = AppLifecycleListener(
+      onResume: () {
+        if (!mounted) return;
+        if (!widget.sip.emChamada) {
+          Navigator.of(context).maybePop();
+        }
+      },
+    );
     _iniciarRenderers();
     final salaId = widget.sip.idSalaConferencia;
     if (salaId != null) {
@@ -102,6 +117,7 @@ class _CallScreenState extends State<CallScreen> {
   @override
   void dispose() {
     widget.sip.removeListener(_onSipChange);
+    _lifecycleListener.dispose();
     _pollParticipantes?.cancel();
     _localRenderer.dispose();
     _remoteRenderer.dispose();

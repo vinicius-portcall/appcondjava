@@ -256,6 +256,12 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     localStream = null;
     remoteStream = null;
     unawaited(_encerrarChamadaKit());
+    // Sem isso, apertar "desligar" numa CallScreen presa (ligação que já
+    // tinha terminado em segundo plano, sem app em primeiro plano pra
+    // renderizar o pop automático) não fazia nada: activeCall já era null,
+    // hangup() virava no-op, e sem notifyListeners() o _onSipChange da tela
+    // nunca rodava de novo pra tentar o Navigator.pop() sozinho.
+    notifyListeners();
   }
 
   void enviarDtmf(String digitos) {

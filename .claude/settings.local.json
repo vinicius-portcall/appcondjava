@@ -347,7 +347,14 @@
       "Bash('C:\\\\Users\\\\Keven/.puro/envs/stable/flutter/bin/dart' analyze *)",
       "Bash(dart analyze *)",
       "Bash(adb devices *)",
-      "Bash(find 'C:\\\\Users\\\\Keven/AppData/Local/Pub/Cache' -path *flutter_webrtc*/lib/src/helper.dart)"
+      "Bash(find 'C:\\\\Users\\\\Keven/AppData/Local/Pub/Cache' -path *flutter_webrtc*/lib/src/helper.dart)",
+      "Bash(gh auth *)",
+      "PowerShell(Get-Command *)",
+      "Bash(git remote *)",
+      "Bash(git push *)",
+      "Bash(git config *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
