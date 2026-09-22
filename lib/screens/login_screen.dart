@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/branding.dart';
 import '../services/session_service.dart';
 import '../services/api_service.dart';
+import '../services/sip_service.dart';
 import '../services/theme_service.dart';
 import 'qr_scan_screen.dart';
 import 'home_screen.dart';
@@ -15,7 +16,15 @@ const _painelUrlPadrao = 'https://clienteauto.portcallvoip.com.br';
 class LoginScreen extends StatefulWidget {
   final ThemeService themeService;
 
-  const LoginScreen({super.key, required this.themeService});
+  /// Mesmo SipService do main() — só repassado adiante pra HomeScreen, que
+  /// é quem conecta depois do login.
+  final SipService sip;
+
+  const LoginScreen({
+    super.key,
+    required this.themeService,
+    required this.sip,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -102,8 +111,11 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) =>
-            HomeScreen(conta: conta, themeService: widget.themeService),
+        builder: (_) => HomeScreen(
+          conta: conta,
+          themeService: widget.themeService,
+          sip: widget.sip,
+        ),
       ),
     );
   }

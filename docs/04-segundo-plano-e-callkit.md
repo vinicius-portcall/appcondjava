@@ -14,7 +14,22 @@ Diferente de uma versão anterior (baseada no pacote `flutter_foreground_task`, 
 - `EngineHolder.kt` (`getOrCreateEngine`) — cria (ou reaproveita, via `FlutterEngineCache` com id fixo `"persistent_engine"`) um único `FlutterEngine`, rodando o `main()` normal do app (`DartExecutor.DartEntrypoint.createDefault()`). Também registra um `MethodChannel` (`portcall/persistent_service`) usado pelo lado Dart (`ForegroundService`) para pedir pra iniciar/parar o serviço de segundo plano e checar/pedir isenção de otimização de bateria.
 - `MainActivity.kt` — em vez de deixar o framework criar um engine novo por conta própria, `provideFlutterEngine()` retorna o mesmo engine cacheado. Isso significa que o app **não reinicia** (nem perde estado — `HomeScreen`, `SipService`, ligação em andamento etc.) quando a Activity é destruída e recriada pelo Android; ela só volta a "desenhar" a mesma árvore de widgets que já estava rodando.
 - `PersistentEngineService.kt` — Service Android nativo (tipo `phoneCall`) que só existe pra manter esse engine vivo quando não tem nenhuma Activity em primeiro plano: notificação persistente (canal `portcall_sip_channel`), `PARTIAL_WAKE_LOCK`, `START_STICKY`. Não tem nenhuma lógica de SIP aqui — é só "segurar o processo".
-- `RestartReceiver.kt` — se o Android matar o Service sem ter sido um `stop()` deliberado (logout), agenda um restart via `AlarmManager` (`onDestroy`/`onTaskRemoved`).
+- `RestartReceiver.kt` — se o Android matar o Service sem ter sido um `stop()` deliberado (logout), agenda um restart via `AlarmManager` (`onDestroy`/`onTaskRemoved`). Também está registrado no manifest para `BOOT_COMPLETED` e `MY_PACKAGE_REPLACED`, que é o que faz o ramal voltar a registrar sozinho depois de reiniciar o celular ou atualizar o app.
+
+### Sem Activity o Flutter não desenha frames — mas os timers continuam
+
+Armadilha que custou caro descobrir, e que dita onde o registro SIP pode morar.
+
+Quando o engine sobe pelo `PersistentEngineService` (celular recém-reiniciado, ninguém abriu o app), **não existe superfície de desenho**. Nesse estado:
+
+- **Frames não são agendados.** `runApp()` ainda força um único "warm-up frame", então a primeira tela (`SplashScreen`) chega a montar — mas nada depois dela. Um `Navigator.pushReplacement` fica **pendente pra sempre**: a tela de destino nunca é construída e o `initState()` dela nunca roda.
+- **Timers, `Future`, I/O e `MethodChannel` continuam funcionando normalmente.** O event loop do Dart não congela.
+
+Por isso o `SipService` é criado no `main()` (`lib/main.dart`), **fora da árvore de widgets**, e `conectar()` é disparado antes do `runApp()` — as telas recebem a instância pronta por construtor (`PortcallApp` → `_SplashRouter` → `HomeScreen`/`LoginScreen`). Enquanto ele nascia dentro de `HomeScreen.initState()`, o ramal simplesmente não registrava depois de um boot: os logs paravam exatamente em "navegando pra HomeScreen" e nenhum REGISTER chegava no Asterisk, até alguém abrir o app na mão. Com o registro no `main()`, o REGISTER sai em segundos e as renovações (`register_expires = 60`) seguem normalmente sem nenhuma Activity — comprovado com o endpoint seguindo `Reachable` por minutos com o celular intocado.
+
+**Consequência prática pra mudanças futuras:** nada que precise funcionar "com o app fechado" pode depender de um widget ter sido construído, de `initState()`, de `BuildContext` ou de navegação. Isso vale pro registro SIP, e valeria pra qualquer outra tarefa de fundo que venha a existir.
+
+Os `debugPrint('[Portcall] ...')` espalhados por `main.dart`, `home_screen.dart` e `sip_service.dart` existem justamente pra diagnosticar esse caminho sem Activity — dá pra acompanhar com `adb logcat | grep Portcall` depois de um reboot.
 
 Do lado Dart, `ForegroundService` (`lib/services/foreground_service.dart`) só conversa com esse Service via `MethodChannel`:
 

@@ -33,6 +33,7 @@ import 'manutencoes_screen.dart';
 import 'moradores_facial_screen.dart';
 import 'mural_screen.dart';
 import 'ouvidoria_screen.dart';
+import 'rota_screen.dart';
 import 'salas_conferencia_screen.dart';
 import 'visitantes_qr_screen.dart';
 
@@ -40,10 +41,16 @@ class HomeScreen extends StatefulWidget {
   final SipAccount conta;
   final ThemeService themeService;
 
+  /// Criado no main(), fora da árvore de widgets — ver o comentário em
+  /// main.dart sobre o engine subindo sem Activity depois de um reboot.
+  /// A tela só usa e escuta; quem controla o ciclo de vida é o main().
+  final SipService sip;
+
   const HomeScreen({
     super.key,
     required this.conta,
     required this.themeService,
+    required this.sip,
   });
 
   @override
@@ -70,7 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _api = ApiService(widget.conta.painelUrl);
-    _sip = SipService();
+    _sip = widget.sip;
     _sip.addListener(_onSipChange);
     _push = PushService(api: _api, conta: widget.conta);
     // Com o engine persistente (ver PersistentEngineService), o app pode
@@ -113,9 +120,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _recarregarDados() async {
-    final branding = await _api
-        .fetchBranding(widget.conta.ramal, widget.conta.senha)
-        .catchError((_) => Branding.fallback());
+    Branding branding;
+    try {
+      branding = await _api.fetchBranding(widget.conta.ramal, widget.conta.senha);
+      unawaited(SessionService().saveBranding(branding));
+    } catch (_) {
+      branding = await SessionService().loadBranding() ?? Branding.fallback();
+    }
     final resultado = await _api
         .fetchBotoes(widget.conta.ramal, widget.conta.senha)
         .catchError((_) => (botoes: <AppButton>[], apartamentos: <String>[]));
@@ -145,29 +156,53 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  /// O registro SIP vem PRIMEIRO de propósito, e todo o resto é
+  /// best-effort sem `await` que o bloqueie.
+  ///
+  /// Quando o engine sobe sozinho depois de reiniciar o celular
+  /// (`RestartReceiver` → `PersistentEngineService`, sem nenhuma Activity),
+  /// pedir permissão de microfone/câmera não tem Activity pra onde mostrar o
+  /// diálogo e pode ficar pendurado pra sempre em vez de lançar erro — e o
+  /// painel ainda está inalcançável porque o Wi-Fi demora dezenas de segundos
+  /// pra reconectar no boot. Com `conectar()` no fim da fila, qualquer um
+  /// desses dois segurava o registro e o ramal ficava fora do ar até alguém
+  /// abrir o app na mão (confirmado em teste: boot limpo = nenhum REGISTER
+  /// chegando no Asterisk; assim que a tela abriu, registrou na hora).
+  ///
+  /// Um único SipService, sempre o mesmo objeto, com ou sem tela visível — o
+  /// PersistentEngineService só mantém o processo/engine vivo, não existe
+  /// handoff entre dois registros pra fazer aqui.
   Future<void> _iniciar() async {
-    await _pedirPermissoesDeMidia();
+    debugPrint('[Portcall] _iniciar: começando (ramal ${widget.conta.ramal})');
+
+    if (!_sip.isRegistered) {
+      try {
+        debugPrint('[Portcall] _iniciar: chamando conectar()');
+        await _sip.conectar(widget.conta);
+        debugPrint('[Portcall] _iniciar: conectar() retornou');
+      } catch (e) {
+        debugPrint('[Portcall] _iniciar: conectar() falhou: $e');
+      }
+    }
+
     if (!mounted) return;
+    unawaited(_pedirPermissoesDeMidia());
     unawaited(
       _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
     );
+    unawaited(_recarregarDados());
+    unawaited(_garantirServicoEmSegundoPlano());
+  }
 
-    await _recarregarDados();
-    if (!mounted) return;
-
+  /// Sem o serviço de segundo plano o registro ainda funciona enquanto o app
+  /// estiver em primeiro plano — não pode travar o resto do início por causa
+  /// disso.
+  Future<void> _garantirServicoEmSegundoPlano() async {
     try {
       await ForegroundService.start(ramal: widget.conta.ramal);
       unawaited(ForegroundService.requestIgnoreBatteryOptimizations());
-    } catch (_) {
-      // Sem o serviço de segundo plano o registro ainda funciona em primeiro
-      // plano — não deve travar o login por causa disso.
-    }
-
-    // Um único SipService, sempre o mesmo objeto, com ou sem tela visível —
-    // o PersistentEngineService só mantém o processo/engine vivo, não existe
-    // mais handoff entre dois registros pra fazer aqui.
-    if (!_sip.isRegistered) {
-      await _sip.conectar(widget.conta);
+    } catch (e) {
+      debugPrint('[Portcall] ForegroundService.start falhou: $e');
     }
   }
 
@@ -253,7 +288,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
-        builder: (_) => LoginScreen(themeService: widget.themeService),
+        builder: (_) =>
+            LoginScreen(themeService: widget.themeService, sip: widget.sip),
       ),
     );
   }
@@ -286,7 +322,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _lifecycleListener.dispose();
     _sip.removeListener(_onSipChange);
-    _sip.dispose();
+    // Sem _sip.dispose() de propósito: o SipService é do main(), não desta
+    // tela — ele precisa continuar registrado depois que a Activity morre
+    // (tela apagada, app fora dos recentes), que é justamente o cenário em
+    // que o interfone toca.
     _push.dispose();
     super.dispose();
   }
@@ -357,6 +396,43 @@ class _HomeScreenState extends State<HomeScreen> {
           conta: widget.conta,
           sip: _sip,
         ),
+      ),
+    );
+  }
+
+  Future<void> _abrirConfiguracoesBateria() async {
+    final confirmou = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Receber ligações sempre'),
+        content: const Text(
+          'Alguns celulares (principalmente Samsung) limitam apps em '
+          'segundo plano mesmo com a permissão de bateria já concedida, o '
+          'que pode fazer o app parar de receber ligações depois de um '
+          'tempo. Vamos abrir as configurações do app — procure por '
+          '"Bateria" e escolha "Sem restrições".',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Agora não'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Abrir configurações'),
+          ),
+        ],
+      ),
+    );
+    if (confirmou == true) {
+      await ForegroundService.abrirConfiguracoesBateria();
+    }
+  }
+
+  void _abrirRota() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RotaScreen(api: _api, conta: widget.conta),
       ),
     );
   }
@@ -505,26 +581,30 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
               const SizedBox(width: 10),
             ],
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _branding.appNome,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                if (_branding.condominioNome != null)
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text(
-                    _branding.condominioNome!,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      color: Theme.of(
-                        context,
-                      ).colorScheme.onSurface.withValues(alpha: 0.6),
-                    ),
+                    _branding.appNome,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-              ],
+                  if (_branding.condominioNome != null)
+                    Text(
+                      _branding.condominioNome!,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ],
         ),
@@ -766,6 +846,22 @@ class _HomeScreenState extends State<HomeScreen> {
                             cor: colors.tileAccents[1],
                             titulo: 'Interfonia',
                             onTap: _abrirInterfonia,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.swap_vert_rounded,
+                            cor: colors.tileAccents[0],
+                            titulo: 'Ordem de Chamada',
+                            onTap: _abrirRota,
+                          ),
+                          _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.battery_alert_rounded,
+                            cor: colors.tileAccents[3],
+                            titulo: 'Bateria',
+                            onTap: _abrirConfiguracoesBateria,
                           ),
                           _tileAcaoRapida(
                             context,

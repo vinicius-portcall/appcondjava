@@ -37,4 +37,15 @@ class ForegroundService {
       await _channel.invokeMethod('requestIgnoreBatteryOptimizations');
     }
   }
+
+  /// Abre a tela de detalhes do app nas configurações do Android — de lá
+  /// dá pra chegar em "Bateria" e escolher "Sem restrições". Em aparelhos
+  /// Samsung existe uma camada de gerenciamento de bateria própria (One UI)
+  /// que pode limitar o app em segundo plano mesmo já isento do Doze padrão
+  /// do Android (o que `requestIgnoreBatteryOptimizations` acima cobre) —
+  /// não tem Intent direta pra essa tela específica em todo fabricante, a
+  /// tela de detalhes do app é o caminho universal.
+  static Future<void> abrirConfiguracoesBateria() async {
+    await _channel.invokeMethod('openBatterySettings');
+  }
 }

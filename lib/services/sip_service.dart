@@ -171,7 +171,9 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       // mas com a conexão de verdade morta (chamada entrante cai no vazio).
       ..register_expires = 60;
 
+    debugPrint('[Portcall] SipService.conectar: iniciando helper (${conta.ramal}@${conta.servidor})');
     await _helper.start(settings);
+    debugPrint('[Portcall] SipService.conectar: helper.start() retornou');
   }
 
   Future<bool> ligarPara(String destino, {bool video = false}) async {
@@ -301,8 +303,10 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   @override
   void registrationStateChanged(RegistrationState state) {
     registrationState = state.state ?? RegistrationStateEnum.NONE;
+    debugPrint('[Portcall] SIP registro -> ${state.state}');
     if (state.state == RegistrationStateEnum.REGISTRATION_FAILED) {
       lastError = state.cause?.cause?.toString() ?? 'Falha ao registrar.';
+      debugPrint('[Portcall] SIP falha de registro: $lastError');
     }
     notifyListeners();
   }
@@ -369,6 +373,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
   @override
   void transportStateChanged(TransportState state) {
+    debugPrint('[Portcall] SIP transporte -> ${state.state}');
     notifyListeners();
   }
 

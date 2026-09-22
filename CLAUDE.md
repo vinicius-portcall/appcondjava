@@ -29,7 +29,9 @@ Builds Android (`flutter build apk`) que envolvem plugins com dependências nati
 
 O app é orientado a serviços, pequeno, sem framework de gerenciamento de estado (sem Provider/Riverpod/Bloc) — as telas mantêm seu próprio estado e falam diretamente com classes de serviço simples (`ChangeNotifier`).
 
-**Fluxo:** `main.dart` → `_SplashRouter` verifica o `SessionService` em busca de uma conta salva → direciona para `LoginScreen` (sem sessão salva) ou `HomeScreen` (sessão existente).
+**Fluxo:** `main.dart` cria o `SipService` e, se já existir conta salva no `SessionService`, dispara o registro SIP **antes do `runApp()`** → `_SplashRouter` direciona para `LoginScreen` (sem sessão salva) ou `HomeScreen` (sessão existente), repassando o `SipService` por construtor.
+
+O registro ficar no `main()`, e não dentro de `HomeScreen.initState()`, é deliberado: quando o engine sobe pelo `PersistentEngineService` depois de reiniciar o celular não existe `Activity`, e sem superfície de desenho o Flutter não agenda frames — a navegação da splash pra home fica pendente pra sempre e nenhum `initState()` roda (timers e I/O, por outro lado, continuam normais). Ver `docs/04-segundo-plano-e-callkit.md`.
 
 **`lib/services/`** — toda a lógica de negócio fica aqui, desacoplada dos widgets:
 - `session_service.dart` — persiste a conta SIP (`SipAccount`) no `shared_preferences` e faz o parse do texto do QR code no formato `PAINEL/SERVIDOR/PORTA/RAMAL/SENHA` gerado pelo `ramal_qrcode.php` do painel.

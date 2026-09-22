@@ -16,6 +16,7 @@ import '../models/convidado_lista.dart';
 import '../models/espaco.dart';
 import '../models/manutencao.dart';
 import '../models/morador_facial.dart';
+import '../models/rota.dart';
 import '../models/sala_conferencia.dart';
 import '../models/visitante_pass.dart';
 
@@ -249,6 +250,54 @@ class ApiService {
     final json = jsonDecode(res.body) as Map<String, dynamic>;
     if (json['ok'] != true) {
       throw Exception(json['error'] ?? 'Erro ao enviar alerta.');
+    }
+  }
+
+  /// Rota de chamada (quem toca primeiro) do apartamento do ramal logado.
+  /// `disponivel: false` quando o condomínio não tem rota cadastrada pra
+  /// esse ramal ainda — a tela trata isso como "recurso indisponível".
+  Future<({bool disponivel, List<CategoriaRota> ordem})> fetchOrdemRota(
+    String ramal,
+    String senha,
+  ) async {
+    final res = await http
+        .get(_uri('api_rota.php', {'ramal': ramal, 'senha': senha}))
+        .timeout(const Duration(seconds: 8));
+
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'Erro ao buscar rota.');
+    }
+    if (json['disponivel'] != true) {
+      return (disponivel: false, ordem: <CategoriaRota>[]);
+    }
+
+    final ordem = (json['ordem'] as List<dynamic>? ?? [])
+        .map((token) => CategoriaRota.fromToken(token as String))
+        .whereType<CategoriaRota>()
+        .toList();
+    return (disponivel: true, ordem: ordem);
+  }
+
+  Future<void> salvarOrdemRota(
+    String ramal,
+    String senha,
+    List<CategoriaRota> ordem,
+  ) async {
+    final res = await http
+        .post(
+          _uri('api_rota.php'),
+          body: {
+            'ramal': ramal,
+            'senha': senha,
+            'ordem': ordem.map((c) => c.token).join(','),
+          },
+        )
+        .timeout(const Duration(seconds: 8));
+
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'Erro ao salvar rota.');
     }
   }
 

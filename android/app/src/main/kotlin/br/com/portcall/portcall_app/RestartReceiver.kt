@@ -40,6 +40,9 @@ class RestartReceiver : BroadcastReceiver() {
         }
     }
 
+    // Também registrado no manifest para BOOT_COMPLETED/MY_PACKAGE_REPLACED
+    // (ver AndroidManifest.xml) — sem isso, reiniciar o celular ou atualizar
+    // o app deixava o ramal sem registrar até alguém abrir o app na mão.
     override fun onReceive(context: Context, intent: Intent?) {
         PersistentEngineService.start(context, null)
     }

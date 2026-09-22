@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/branding.dart';
+
 class SipAccount {
   final String painelUrl;
   final String servidor;
@@ -25,6 +27,9 @@ class SessionService {
   static const _kRamal = 'sip_ramal';
   static const _kSenha = 'sip_senha';
   static const _kNome = 'display_name';
+  static const _kBrandingAppNome = 'branding_app_nome';
+  static const _kBrandingCondominioNome = 'branding_condominio_nome';
+  static const _kBrandingLogoUrl = 'branding_logo_url';
 
   Future<void> save(SipAccount account) async {
     final prefs = await SharedPreferences.getInstance();
@@ -65,6 +70,38 @@ class SessionService {
     await prefs.remove(_kRamal);
     await prefs.remove(_kSenha);
     await prefs.remove(_kNome);
+    await prefs.remove(_kBrandingAppNome);
+    await prefs.remove(_kBrandingCondominioNome);
+    await prefs.remove(_kBrandingLogoUrl);
+  }
+
+  /// Guarda o último branding buscado com sucesso, pra tela de abertura
+  /// poder mostrar logo/nome do condomínio na hora, sem esperar rede.
+  Future<void> saveBranding(Branding branding) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kBrandingAppNome, branding.appNome);
+    if (branding.condominioNome != null) {
+      await prefs.setString(_kBrandingCondominioNome, branding.condominioNome!);
+    } else {
+      await prefs.remove(_kBrandingCondominioNome);
+    }
+    if (branding.logoUrl != null) {
+      await prefs.setString(_kBrandingLogoUrl, branding.logoUrl!);
+    } else {
+      await prefs.remove(_kBrandingLogoUrl);
+    }
+  }
+
+  Future<Branding?> loadBranding() async {
+    final prefs = await SharedPreferences.getInstance();
+    final appNome = prefs.getString(_kBrandingAppNome);
+    if (appNome == null) return null;
+
+    return Branding(
+      appNome: appNome,
+      condominioNome: prefs.getString(_kBrandingCondominioNome),
+      logoUrl: prefs.getString(_kBrandingLogoUrl),
+    );
   }
 
   /// Extrai os campos do texto do QR gerado por ramal_qrcode.php

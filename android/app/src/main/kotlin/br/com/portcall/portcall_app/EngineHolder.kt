@@ -72,6 +72,25 @@ object EngineHolder {
                     }
                     result.success(null)
                 }
+                "openBatterySettings" -> {
+                    // Isso aqui NÃO é o mesmo que o Doze/whitelist padrão do
+                    // Android (requestIgnoreBatteryOptimizations acima) — em
+                    // aparelhos Samsung existe uma camada extra de
+                    // gerenciamento de bateria (One UI: Otimizado/Restrito/
+                    // Sem restrições) que já vimos derrubar o registro SIP
+                    // minutos depois do app acordar sozinho, mesmo já isento
+                    // do Doze padrão. Não tem Intent direta e documentada pra
+                    // abrir essa tela específica em todo fabricante — a tela
+                    // de detalhes do app é o único caminho universal, e a
+                    // opção de bateria fica a um toque dali em qualquer
+                    // Android.
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.parse("package:${context.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

@@ -62,6 +62,16 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+  adaptive_icon_background: "#00A85A"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
 
 # sip_ua tem um bug real no transporte TCP: não faz reassembly de mensagens
 # fatiadas entre pacotes de rede, o que derruba a conexão em chamadas de
