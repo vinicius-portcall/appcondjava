@@ -38,6 +38,19 @@ Repare que é um repositório **local, sem remote**: serve pra desfazer erro e v
 
 Builds Android (`flutter build apk`) que envolvem plugins com dependências nativas pesadas (ex.: Firebase) podem falhar com erros como `immutable workspace ... have been modified` ou transforms do Gradle "corrompidos" — na prática isso costuma ser **limite de caminho longo do Windows (260 caracteres)** truncando a exclusão de subpastas fundas em `C:\Users\<usuário>\.gradle\caches\`, não corrupção de disco de verdade. O `Remove-Item -Recurse -Force` do PowerShell falha *silenciosamente* nesses casos (não lança erro, só deixa lixo pra trás). Para limpar de vez: matar processos `java` (daemon do Gradle preso segurando lock) e apagar `~/.gradle/caches` via `rm -rf` no Git Bash, que lida melhor com caminhos longos. Também vale checar espaço em disco livre antes de builds grandes — historicamente esta máquina já ficou com o disco C: cheio (pasta Downloads acumulando instaladores de Windows/Office na casa de dezenas de GB).
 
+Os dois parágrafos acima valem só pra máquina Windows onde o app foi desenvolvido. Num Mac, o fluxo é o padrão do Flutter (`flutter run -d <id>`), `flutter analyze` funciona normalmente e nada disso se aplica.
+
+### Estado do iOS
+
+**Nunca foi compilado nem rodado num aparelho iOS** — todo o desenvolvimento e teste até aqui foi Android. O que já está preparado:
+
+- Bundle id `br.com.portcall.portcallApp` (repare que difere do `applicationId` do Android, `br.com.portcall.portcall_app`).
+- `Info.plist` com `NSCameraUsageDescription`, `NSMicrophoneUsageDescription`, `NSPhotoLibraryUsageDescription` e `UIBackgroundModes: audio`. Sem as três primeiras o iOS encerra o app na hora em que ele pede a permissão — faltavam e foram adicionadas.
+- Ícones gerados pra todos os tamanhos (`flutter_launcher_icons`, com `remove_alpha_ios` — a App Store recusa ícone com canal alfa).
+- `codemagic.yaml` na raiz, com um workflow ad-hoc e um de TestFlight. Depende de integração App Store Connect configurada no painel do Codemagic, que **ainda não existe**.
+
+**O que NÃO existe no iOS:** todo o mecanismo de continuar registrado com o app fechado é Android puro (`PersistentEngineService`, `RestartReceiver`, `BOOT_COMPLETED`, foreground service). O iOS não permite manter um WebSocket SIP vivo em segundo plano; o equivalente seria PushKit + CallKit (VoIP push), que não está implementado. Portanto, no iPhone, espere receber chamada só com o app em primeiro plano até isso existir. A keystore de release é Android-only e não tem efeito aqui.
+
 ## Arquitetura
 
 O app é orientado a serviços, pequeno, sem framework de gerenciamento de estado (sem Provider/Riverpod/Bloc) — as telas mantêm seu próprio estado e falam diretamente com classes de serviço simples (`ChangeNotifier`).
