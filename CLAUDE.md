@@ -21,6 +21,19 @@ Fluxo padrão do Flutter (execute a partir da raiz do repositório):
 
 Não há configuração de CI, script de build customizado nem código de backend neste repositório — a API PHP do painel (`api_app_config.php`, `api_botoes.php`, `ramal_qrcode.php`) com a qual o app se comunica vive fora deste repositório.
 
+**Esse código do servidor tem versionamento próprio, direto em produção** (`clienteauto.portcallvoip.com.br`), porque uma edição errada no `portcall_router.agi` derruba todas as ligações do condomínio e antes o único backup era uma cópia manual com data no nome:
+
+```bash
+portcall-git status              # o que mudou desde o último save
+portcall-git diff                # as mudanças em detalhe
+portcall-git save "mensagem"     # grava um ponto de restauração
+portcall-git restore <arquivo>   # volta UM arquivo pro último save
+```
+
+Cobre `/var/www/html` (o painel) e os `portcall_*.agi` em `/var/lib/asterisk/agi-bin`. Os diretórios `.git` ficam em `/opt/portcall-git`, **fora do docroot** de propósito — dentro dele, qualquer um baixaria o código-fonte e as senhas de banco pela web (confirmado: `/.git/config` responde 404). Tarballs, APKs e `uploads/` ficam de fora (2,3 GB dos 2,4 GB da pasta eram lixo de build).
+
+Repare que é um repositório **local, sem remote**: serve pra desfazer erro e ver histórico, não como backup contra a perda do servidor. As senhas de banco estão hardcoded em `funcoes.php` e nos AGIs, então espelhar isso num remote exigiria antes movê-las pra um arquivo de configuração fora do versionamento.
+
 **Nesta máquina Windows específica**, o Flutter não vinha instalado nem no PATH; foi instalado via `winget install pingbird.Puro` (gerenciador de versões Flutter) e `puro create stable stable`, ficando em `C:\Users\<usuário>\.puro\envs\stable\flutter\bin\`. **`flutter analyze` trava com `FormatException` no canal LSP** nesta máquina — a causa é o `ç` no caminho da pasta (`Projetos Programaçao`), que corrompe o framing `Content-Length` da comunicação com o `analysis_server`. Usar `dart analyze` (mesmo binário, mesma config de lint) como alternativa — funciona normalmente e não passa pelo canal LSP problemático.
 
 Builds Android (`flutter build apk`) que envolvem plugins com dependências nativas pesadas (ex.: Firebase) podem falhar com erros como `immutable workspace ... have been modified` ou transforms do Gradle "corrompidos" — na prática isso costuma ser **limite de caminho longo do Windows (260 caracteres)** truncando a exclusão de subpastas fundas em `C:\Users\<usuário>\.gradle\caches\`, não corrupção de disco de verdade. O `Remove-Item -Recurse -Force` do PowerShell falha *silenciosamente* nesses casos (não lança erro, só deixa lixo pra trás). Para limpar de vez: matar processos `java` (daemon do Gradle preso segurando lock) e apagar `~/.gradle/caches` via `rm -rf` no Git Bash, que lida melhor com caminhos longos. Também vale checar espaço em disco livre antes de builds grandes — historicamente esta máquina já ficou com o disco C: cheio (pasta Downloads acumulando instaladores de Windows/Office na casa de dezenas de GB).

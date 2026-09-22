@@ -301,6 +301,72 @@ class ApiService {
     }
   }
 
+  /// Unidades que o morador pode bloquear e quais já estão bloqueadas.
+  /// A portaria/interfone nunca vem nessa lista — ver `unidade_reservada()`
+  /// em api_bloqueios.php e no portcall_router.agi. `disponivel: false`
+  /// quando o ramal não está vinculado a nenhuma unidade com rota ativa.
+  Future<
+    ({
+      bool disponivel,
+      String minhaUnidade,
+      List<String> unidades,
+      List<String> bloqueadas,
+    })
+  >
+  fetchBloqueios(String ramal, String senha) async {
+    final res = await http
+        .get(_uri('api_bloqueios.php', {'ramal': ramal, 'senha': senha}))
+        .timeout(const Duration(seconds: 8));
+
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'Erro ao buscar bloqueios.');
+    }
+    if (json['disponivel'] != true) {
+      return (
+        disponivel: false,
+        minhaUnidade: '',
+        unidades: <String>[],
+        bloqueadas: <String>[],
+      );
+    }
+
+    List<String> lista(String chave) => (json[chave] as List<dynamic>? ?? [])
+        .map((e) => e.toString())
+        .toList();
+
+    return (
+      disponivel: true,
+      minhaUnidade: (json['minha_unidade'] ?? '').toString(),
+      unidades: lista('unidades'),
+      bloqueadas: lista('bloqueadas'),
+    );
+  }
+
+  Future<void> salvarBloqueio(
+    String ramal,
+    String senha, {
+    required String unidade,
+    required bool bloquear,
+  }) async {
+    final res = await http
+        .post(
+          _uri('api_bloqueios.php'),
+          body: {
+            'ramal': ramal,
+            'senha': senha,
+            'unidade': unidade,
+            'acao': bloquear ? 'bloquear' : 'desbloquear',
+          },
+        )
+        .timeout(const Duration(seconds: 8));
+
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'Erro ao salvar bloqueio.');
+    }
+  }
+
   Future<VisitantePass> criarVisitantePass(
     String ramal,
     String senha, {

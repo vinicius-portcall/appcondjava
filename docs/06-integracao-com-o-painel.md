@@ -189,6 +189,44 @@ Busca o histórico **de todo o condomínio** (não filtrado por ramal — difere
 
 Chamado por `CallScreen._abrirPortao()` toda vez que o morador aciona um botão de portão durante uma chamada. Erro aqui é engolido silenciosamente por quem chama (`.catchError((_) {})`) — o portão já foi acionado via DTMF antes dessa chamada, então uma falha só no registro do histórico não deve incomodar o morador.
 
+### `fetchOrdemRota(ramal, senha)` / `salvarOrdemRota(...)` → `api_rota.php`
+
+Lê e grava a ordem de toque da unidade do morador (`RotaScreen`), na coluna `rotas_horarios.ordem_chamada` — a mesma que o síndico edita em `editar_rota.php`. O banco guarda 5 tokens (`ramal`, `ramd1`, `ramd2`, `cel1`, `cel2`), mas o app expõe só **3 blocos** reordenáveis, e a sub-ordem dentro de cada bloco (ex.: `cel1` antes de `cel2`) é preservada como o síndico configurou:
+
+| Bloco (app) | Rótulo na tela | Tokens |
+|---|---|---|
+| `ramal_analogico` | Ramal Analógico | `ramal` |
+| `ramal_digital` | **App Celular** | `ramd1`, `ramd2` |
+| `celular` | Celular | `cel1`, `cel2` |
+
+"App Celular" é o próprio Portcall registrado como ramal SIP no aparelho — o rótulo diferencia de "Celular", que é ligação comum pro número de telefone.
+
+```json
+{ "ok": true, "disponivel": true, "ordem": ["ramal_analogico", "celular"] }
+```
+
+`disponivel: false` quando o ramal não está vinculado a nenhuma unidade com rota ativa. O POST só aceita uma permutação exata dos blocos que já existem na rota — não dá pra adicionar nem remover perna por aqui — e grava **apenas** `ordem_chamada`, nunca números ou tempos.
+
+### `fetchBloqueios(ramal, senha)` / `salvarBloqueio(...)` → `api_bloqueios.php`
+
+Unidades que o morador não quer receber ligação (`BloqueiosScreen`, acessível pelo ícone 🚫 na tela Unidades). Tabela `bloqueios_unidade` (`condominio_id`, `unidade`, `unidade_bloqueada`).
+
+```json
+{
+  "ok": true, "disponivel": true, "minha_unidade": "102",
+  "unidades": ["101", "5000"], "bloqueadas": ["101"]
+}
+```
+
+**Quem barra a ligação é o servidor, não o app.** `portcall_router.agi` (Asterisk) checa o bloqueio antes de montar a rota: traduz o ramal de quem ligou para a unidade correspondente (via `rotas_horarios`), e se houver bloqueio responde ocupado (`Busy`) e encerra. Por isso nem o ramal, nem o app, nem os celulares da rota chegam a tocar — um bloqueio feito só no app deixaria o celular cadastrado tocando do mesmo jeito.
+
+Duas salvaguardas, porque um morador isolado da portaria deixa de receber entrega, visita e **aviso de emergência**:
+
+1. Unidades reservadas (`porteiro`, `portaria`, `guarita`, `interfone`, `entrada`, `zeladoria`) nunca entram na lista de bloqueáveis, e o POST as recusa com 403. A comparação é por nome exato de propósito — condomínio horizontal usa "Casa 5", que é unidade legítima e precisa continuar bloqueável.
+2. O AGI é **fail-open**: erro de banco, origem que não mapeia pra nenhuma unidade ou origem reservada → a ligação segue normalmente. Deixar passar uma chamada indevida é incomparavelmente menos grave do que barrar uma emergência.
+
+A lista de reservadas existe duplicada (`unidade_reservada()` em `api_bloqueios.php` e no `portcall_router.agi`) — se mudar uma, mudar a outra.
+
 ## Modelo `AppButton`
 
 | Campo | Tipo | Descrição |

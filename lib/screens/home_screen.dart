@@ -382,8 +382,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void _abrirApartamentos() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            ApartamentosScreen(sip: _sip, apartamentos: _apartamentos),
+        builder: (_) => ApartamentosScreen(
+          sip: _sip,
+          apartamentos: _apartamentos,
+          api: _api,
+          conta: widget.conta,
+        ),
       ),
     );
   }
@@ -747,7 +751,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             colors: colors,
                             icone: Icons.home_rounded,
                             cor: colors.tileAccents[0],
-                            titulo: 'Apartamentos',
+                            titulo: 'Unidades',
                             subtitulo: _apartamentos.isNotEmpty
                                 ? '${_apartamentos.length}'
                                 : null,
