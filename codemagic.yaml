@@ -52,7 +52,7 @@ workflows:
         auth: integration # usa a integração "App Store Connect" configurada no painel do Codemagic
         submit_to_testflight: true
         beta_groups:
-          - Testadores Portcall
+          - Testadores Video Atende
 
   ios-adhoc-sem-conta-apple:
     name: iOS - build ad-hoc (sem TestFlight)
@@ -60,6 +60,9 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       vars:
+        # Usado pelo fetch-signing-files mais abaixo — sem isso o script
+        # roda com a variável vazia e o build falha.
+        BUNDLE_ID: "br.com.portcall.portcallApp"
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
         XCODE_SCHEME: "Runner"
       ios_signing:
