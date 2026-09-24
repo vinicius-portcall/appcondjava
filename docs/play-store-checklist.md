@@ -8,12 +8,15 @@ app: mexeu em permissão, revise a justificativa aqui antes de enviar.
 
 | Item | Estado |
 |---|---|
-| Nome do app | **Video Atende** |
+| Nome do app | **Vídeo Atende** |
 | Pacote (`applicationId`) | `br.com.portcall.portcall_app` — **não muda depois de publicado** |
 | Versão | `1.0.0+1` (`pubspec.yaml`) |
 | Assinatura | keystore de release em `android/keystore/` (fora do git) |
 | Política de privacidade | https://clienteauto.portcallvoip.com.br/privacidade.html |
-| Conta Play Console | ⬜ a criar (US$25, taxa única) |
+| Conta Play Console | criada, **aguardando verificação do Google** |
+
+> O nome leva acento — **Vídeo Atende** — para bater com o banner e o
+> material de marca do cliente.
 
 > **Conta pessoal vs. organização:** conta pessoal criada após nov/2023 só
 > publica em produção depois de um teste fechado com **12 testadores por 14
@@ -25,7 +28,7 @@ app: mexeu em permissão, revise a justificativa aqui antes de enviar.
 
 **Nome (30 caracteres):**
 ```
-Video Atende
+Vídeo Atende
 ```
 
 **Descrição curta (80 caracteres):**
@@ -35,7 +38,7 @@ Atenda o interfone do seu condomínio pelo celular, com áudio e vídeo.
 
 **Descrição completa:**
 ```
-O Video Atende transforma seu celular no interfone do condomínio.
+O Vídeo Atende transforma seu celular no interfone do condomínio.
 
 Receba a chamada da portaria onde estiver, veja quem está na entrada pela
 câmera e libere o acesso — sem depender do aparelho fixo na parede.
@@ -71,11 +74,18 @@ ser removido a qualquer momento. Consulte a política de privacidade.
 
 ## Recursos gráficos exigidos
 
-| Recurso | Formato | Onde está |
+Todos prontos em `play-store/` (pasta fora do git, ver `.gitignore`):
+
+| Recurso | Formato exigido | Arquivo |
 |---|---|---|
-| Ícone | 512×512 PNG, sem alfa | `assets/icon/app_icon.png` (1024×1024, redimensionar) |
-| Gráfico de destaque | 1024×500 PNG | usar `banner MultVirtual Video Atende.png` do servidor |
-| Screenshots telefone | mín. 2, entre 320px e 3840px | gerados via `adb` — ver abaixo |
+| Ícone | 512×512 PNG, **sem canal alfa** | `icone-loja-512.png` |
+| Gráfico de destaque | 1024×500 PNG | `grafico-destaque-1024x500.png` |
+| Screenshots telefone | mín. 2, entre 320 e 3840 px | `01-home.png`, `02-unidades.png`, `03-bloqueios.png` |
+
+O gráfico de destaque veio do banner que o cliente já tinha (`banner
+MultVirtual Video Atende.png`, no servidor em `/root/APP VIDEO ATENDE/`),
+que já estava exatamente em 1024×500. Ícone e banner foram reconvertidos
+para 24 bits sem alfa — a loja recusa ícone com transparência.
 
 ## Justificativas de permissão (onde a maioria é reprovada)
 
@@ -132,15 +142,17 @@ de notificação).
 
 ## Passo a passo
 
-1. ⬜ Criar conta no Play Console (decidir pessoal × organização)
-2. ⬜ Trocar o e-mail de contato na política de privacidade
+1. ✅ Criar conta no Play Console — aguardando verificação do Google
+2. ⬜ Trocar o e-mail de contato na política de privacidade (hoje está o
+   placeholder `CONTATO@EXEMPLO.COM.BR`, de propósito bem visível)
 3. ✅ Gerar o `.aab` assinado (`flutter build appbundle --release`)
 4. ✅ Capturar screenshots
-5. ⬜ Criar o app no Console e preencher ficha + Data safety + classificação
-6. ⬜ Responder os formulários de permissão acima
-7. ⬜ Subir o `.aab` em **teste interno** primeiro (instala pela loja de
+5. ✅ Ícone 512 e gráfico de destaque
+6. ⬜ Criar o app no Console e preencher ficha + Data safety + classificação
+7. ⬜ Responder os formulários de permissão acima
+8. ⬜ Subir o `.aab` em **teste interno** primeiro (instala pela loja de
    verdade, sem exposição pública) e só depois promover
-8. ⬜ Enviar para revisão
+9. ⬜ Enviar para revisão
 
 > **Sempre suba primeiro em teste interno.** É a única forma de verificar
 > que o app assinado pela Play Store (o Google reassina) funciona no

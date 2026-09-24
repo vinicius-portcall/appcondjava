@@ -52,7 +52,7 @@ workflows:
         auth: integration # usa a integração "App Store Connect" configurada no painel do Codemagic
         submit_to_testflight: true
         beta_groups:
-          - Testadores Video Atende
+          - Testadores Vídeo Atende
 
   ios-adhoc-sem-conta-apple:
     name: iOS - build ad-hoc (sem TestFlight)

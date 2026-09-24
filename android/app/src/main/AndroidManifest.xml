@@ -14,7 +14,7 @@
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
-        android:label="Video Atende"
+        android:label="Vídeo Atende"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
