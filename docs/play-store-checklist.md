@@ -70,7 +70,8 @@ ser removido a qualquer momento. Consulte a política de privacidade.
 
 **Categoria:** Estilo de vida (alternativa: Ferramentas)
 **Tags:** interfone, condomínio, portaria, videoporteiro
-**E-mail de contato:** ⬜ definir (o mesmo da política de privacidade)
+**E-mail de contato:** `portcallvoip@gmail.com` (o mesmo da política de
+privacidade — o Google compara os dois)
 
 ## Recursos gráficos exigidos
 
@@ -143,8 +144,8 @@ de notificação).
 ## Passo a passo
 
 1. ✅ Criar conta no Play Console — aguardando verificação do Google
-2. ⬜ Trocar o e-mail de contato na política de privacidade (hoje está o
-   placeholder `CONTATO@EXEMPLO.COM.BR`, de propósito bem visível)
+2. ✅ E-mail de contato definido: `portcallvoip@gmail.com` (na política e na
+   ficha da loja — precisam ser o mesmo)
 3. ✅ Gerar o `.aab` assinado (`flutter build appbundle --release`)
 4. ✅ Capturar screenshots
 5. ✅ Ícone 512 e gráfico de destaque
