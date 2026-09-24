@@ -70,7 +70,7 @@ O registro ficar no `main()`, e não dentro de `HomeScreen.initState()`, é deli
 - `home_screen.dart` — a tela principal após o login. Solicita permissões de microfone/câmera, carrega branding + botões de discagem + unidades, conecta o `SipService` e renderiza as ações rápidas (Apartamentos, Câmeras) e a grade de botões de discagem configurados pelo condomínio. Escuta o `SipService` e empurra automaticamente a `CallScreen` sempre que uma chamada fica ativa (entrante ou sainte).
 - `call_screen.dart` — UI durante a chamada: renderiza vídeo WebRTC local/remoto via `RTCVideoView` quando o vídeo está ativo, teclado DTMF e atalhos de DTMF por botão ("portão", `AppButton` do tipo `dtmf`) exibidos apenas durante a chamada.
 - `apartamentos_screen.dart` / `dialpad_screen.dart` — ligar para qualquer unidade da lista fornecida pelo painel, ou discar um número arbitrário.
-- `cameras_screen.dart` — placeholder ("em breve"), ainda não implementada.
+- `cameras_screen.dart` — lista as câmeras do condomínio e abre o stream RTSP ao vivo com `media_kit`/`media_kit_video`. É essa dependência (libmpv nativa) que responde pela maior parte do tamanho do pacote, então não remova achando que é peso morto.
 
 **`lib/models/`** — classes de dados simples com factories `fromJson` que espelham o formato JSON da API do painel: `AppButton` (tipo `discar` = ligar, ou `dtmf`; tem `ordem` para ordenação), `Branding`.
 

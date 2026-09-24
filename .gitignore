@@ -55,3 +55,5 @@ ios/Flutter/Flutter.podspec
 ios/Flutter/.last_build_id
 ios/Pods/
 ios/.symlinks/
+# Pacotes e material da loja (gerados, pesados)
+play-store/
