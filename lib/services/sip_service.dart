@@ -46,6 +46,16 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   int? get idSalaConferencia =>
       emSalaConferencia ? int.parse(_ultimoDestino!) - 90000 : null;
 
+  /// Ligação de morador pra morador (tela Unidades). A tela de chamada usa
+  /// isso pra esconder os atalhos de portão: abrir o portão faz sentido
+  /// falando com a portaria, não com o vizinho.
+  ///
+  /// Só vale pra chamada que SAIU daqui — numa chamada recebida o app não
+  /// tem como saber se quem ligou é a portaria ou outra unidade (chega só o
+  /// ramal de origem, e o vínculo ramal→unidade mora no servidor).
+  bool get chamadaEntreUnidades => _entreUnidades;
+  bool _entreUnidades = false;
+
   SipService() {
     _helper.addSipUaHelperListener(this);
     _callKitSub = FlutterCallkitIncoming.onEvent.listen(_onCallKitEvent);
@@ -176,10 +186,44 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     debugPrint('[Portcall] SipService.conectar: helper.start() retornou');
   }
 
-  Future<bool> ligarPara(String destino, {bool video = false}) async {
+  /// Teto de resolução e quadros do vídeo que ESTE aparelho envia.
+  ///
+  /// O sip_ua só define mínimos por padrão (`minWidth: 640`,
+  /// `minHeight: 480`, `minFrameRate: 30`) e nenhum máximo — num celular
+  /// moderno o WebRTC sobe bem acima disso, gastando dados e bateria à toa
+  /// pra um interfone, onde basta enxergar quem está na portaria.
+  ///
+  /// Pra baixar mais (rede ruim, plano limitado), reduza `maxWidth`/
+  /// `maxHeight` aqui — 480x360 ainda é perfeitamente legível. Os mínimos
+  /// também caem junto, senão a câmera não consegue atender ao pedido.
+  static const Map<String, dynamic> _constraintsVideoLeve = <String, dynamic>{
+    'mediaConstraints': <String, dynamic>{
+      'video': <String, dynamic>{
+        'mandatory': <String, dynamic>{
+          'minWidth': '320',
+          'minHeight': '240',
+          'maxWidth': '640',
+          'maxHeight': '480',
+          'minFrameRate': '15',
+          'maxFrameRate': '20',
+        },
+        'facingMode': 'user',
+        'optional': <dynamic>[],
+      },
+    },
+  };
+
+  /// [entreUnidades] marca ligação de morador pra morador (tela Unidades) —
+  /// ver `chamadaEntreUnidades`.
+  Future<bool> ligarPara(
+    String destino, {
+    bool video = false,
+    bool entreUnidades = false,
+  }) async {
     chamadaComVideo = video;
     muted = false;
     _ultimoDestino = destino;
+    _entreUnidades = entreUnidades;
     // Com vídeo, não dá pra ver a tela com o telefone no ouvido — liga o
     // viva-voz (ou fone bluetooth, se tiver um conectado) de cara. Sem
     // vídeo, começa no fone de ouvido normal (igual ligação de telefone
@@ -190,7 +234,14 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
           ? Helper.setSpeakerphoneOnButPreferBluetooth()
           : Helper.setSpeakerphoneOn(false),
     );
-    return _helper.call(destino, voiceOnly: !video);
+    // customOptions só quando há vídeo: o merge do sip_ua é recursivo, e
+    // sobrepor um Map em cima de `video: false` transformaria uma chamada
+    // de áudio em vídeo sem querer.
+    return _helper.call(
+      destino,
+      voiceOnly: !video,
+      customOptions: video ? _constraintsVideoLeve : null,
+    );
   }
 
   /// Muta/desmuta o microfone desativando a faixa de áudio local — o outro
@@ -209,9 +260,11 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// voltar pro fone numa ligação de áudio (só vídeo tinha o viva-voz
   /// forçado de propósito; áudio ficava sem controle nenhum de rota,
   /// dependendo do que o Android decidisse por padrão).
+  /// Usa o mesmo caminho do `_aplicarSaidaDeAudio` — com CallKit ativo,
+  /// `setSpeakerphoneOn` sozinho não muda nada (ver lá o porquê).
   void alternarAltoFalante() {
     altoFalante = !altoFalante;
-    unawaited(Helper.setSpeakerphoneOn(altoFalante));
+    unawaited(_aplicarSaidaDeAudio());
     notifyListeners();
   }
 
@@ -232,13 +285,24 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     chamadaComVideo = comVideo;
     muted = false;
     _ultimoDestino = null;
+    // Chamada recebida: não dá pra saber se veio da portaria ou de outra
+    // unidade, então mantém os atalhos de portão disponíveis.
+    _entreUnidades = false;
     altoFalante = comVideo;
     unawaited(
       comVideo
           ? Helper.setSpeakerphoneOnButPreferBluetooth()
           : Helper.setSpeakerphoneOn(false),
     );
-    activeCall?.answer(_helper.buildCallOptions(!comVideo));
+    // Mesmo teto de vídeo de quem origina (ver _constraintsVideoLeve) —
+    // sem isso, só metade das chamadas sairia com a resolução controlada.
+    final opcoes = _helper.buildCallOptions(!comVideo);
+    if (comVideo) {
+      (opcoes['mediaConstraints'] as Map<String, dynamic>)['video'] =
+          (_constraintsVideoLeve['mediaConstraints']
+              as Map<String, dynamic>)['video'];
+    }
+    activeCall?.answer(opcoes);
     // Desde a v3 do flutter_callkit_incoming (ConnectionService próprio no
     // Android), setCallConnected é o que avisa o sistema que a ligação
     // ficou ativa de verdade — sem isso o áudio não roteia direito. Usa
@@ -251,6 +315,64 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       unawaited(FlutterCallkitIncoming.setCallConnected(id));
     }
     unawaited(_esconderChamadaKit());
+  }
+
+  /// Força a saída de áudio atual (viva-voz ou fone), usando a API de
+  /// seleção de dispositivo do flutter_webrtc em vez de
+  /// `setSpeakerphoneOn`.
+  ///
+  /// Motivo: com o CallKit v3 o app roda como *self-managed
+  /// ConnectionService*, e nesse modo quem decide a rota de áudio é o
+  /// Telecom do Android — `AudioManager.setSpeakerphoneOn()` (o que
+  /// `setSpeakerphoneOn`/`setSpeakerphoneOnButPreferBluetooth` chamam por
+  /// baixo) simplesmente não tem efeito. `selectAudioOutput` passa pelo
+  /// AudioSwitchManager, que fala a língua certa. Sem isso, numa chamada de
+  /// vídeo quem atendia ouvia no fone enquanto quem ligou ouvia no
+  /// viva-voz — só o lado que atende passa por CallKit.
+  ///
+  /// Fone Bluetooth tem precedência sobre o viva-voz: forçar o alto-falante
+  /// com um fone conectado seria pior que o problema original.
+  Future<void> _aplicarSaidaDeAudio() async {
+    // ESTA é a linha que faz o resto funcionar. O CallKit coloca o
+    // AudioManager em MODE_IN_CALL, e nesse modo o flutter_webrtc
+    // DESLIGA o roteamento de áudio por conta própria (ver
+    // `forceHandleAudioRouting` em audio_configuration.dart) — com isso
+    // tanto setSpeakerphoneOn quanto selectAudioOutput viram no-op
+    // silencioso. Era por isso que nem o viva-voz automático nem o botão
+    // da tela de chamada surtiam efeito pra quem atendia.
+    try {
+      await Helper.setAndroidAudioConfiguration(
+        AndroidAudioConfiguration(
+          androidAudioMode: AndroidAudioMode.inCommunication,
+          forceHandleAudioRouting: true,
+        ),
+      );
+    } catch (_) {
+      // Só existe no Android; no iOS a chamada não se aplica.
+    }
+
+    if (!altoFalante) {
+      try {
+        await Helper.selectAudioOutput('earpiece');
+      } catch (_) {
+        unawaited(Helper.setSpeakerphoneOn(false));
+      }
+      return;
+    }
+
+    try {
+      final saidas = await Helper.audiooutputs;
+      final temBluetooth = saidas.any(
+        (d) => d.label.toLowerCase().contains('bluetooth'),
+      );
+      if (temBluetooth) {
+        await Helper.setSpeakerphoneOnButPreferBluetooth();
+        return;
+      }
+      await Helper.selectAudioOutput('speaker');
+    } catch (_) {
+      unawaited(Helper.setSpeakerphoneOn(true));
+    }
   }
 
   void desligar() {
@@ -354,6 +476,22 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       }
     }
 
+    // Mesma história do unmute acima, agora na saída de áudio: quem ATENDE
+    // passa pelo setCallConnected() do CallKit, e o ConnectionService do
+    // Telecom redefine a rota pro padrão (fone) DEPOIS de já termos pedido
+    // viva-voz em atender() — que roda antes mesmo do answer(), quando
+    // ainda não existe áudio nenhum pra rotear. O efeito era assimétrico e
+    // confuso: numa chamada de vídeo, quem ligou ouvia no viva-voz e quem
+    // atendeu ouvia no fone. Quem origina não passa por CallKit, por isso
+    // só o lado que recebe era afetado.
+    //
+    // CONFIRMED é o primeiro momento em que a chamada está de fato
+    // estabelecida (ACK trocado, áudio fluindo) — reaplicar aqui é o que
+    // faz a escolha persistir.
+    if (state.state == CallStateEnum.CONFIRMED) {
+      unawaited(_aplicarSaidaDeAudio());
+    }
+
     activeCall = call;
     callState = state.state;
     if (state.state == CallStateEnum.ENDED ||
@@ -366,6 +504,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       muted = false;
       altoFalante = false;
       _ultimoDestino = null;
+      _entreUnidades = false;
       unawaited(_encerrarChamadaKit());
     }
     notifyListeners();

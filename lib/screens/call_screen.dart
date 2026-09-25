@@ -240,6 +240,10 @@ class _CallScreenState extends State<CallScreen> {
     final comVideo =
         widget.sip.remoteStream?.getVideoTracks().isNotEmpty ?? false;
     final emSalaConferencia = widget.sip.emSalaConferencia;
+    // Atalhos de portão só aparecem quando podem ser úteis: falando com a
+    // portaria. Numa reunião ou numa ligação pro vizinho, só ocupam espaço.
+    final mostrarAtalhosPortao =
+        !emSalaConferencia && !widget.sip.chamadaEntreUnidades;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -325,7 +329,7 @@ class _CallScreenState extends State<CallScreen> {
                 ],
                 const Spacer(),
                 if (!aguardandoAtender &&
-                    !emSalaConferencia &&
+                    mostrarAtalhosPortao &&
                     widget.botoesDtmf.isNotEmpty) ...[
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,

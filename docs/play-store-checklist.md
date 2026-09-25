@@ -64,8 +64,9 @@ Se o seu condomínio ainda não usa o sistema, fale com a administração.
 
 PRIVACIDADE
 
-As chamadas não são gravadas. O cadastro facial é sempre opcional e pode
-ser removido a qualquer momento. Consulte a política de privacidade.
+As chamadas do interfone são gravadas para segurança do condomínio. O
+cadastro facial é sempre opcional e pode ser removido a qualquer momento.
+Consulte a política de privacidade.
 ```
 
 **Categoria:** Estilo de vida (alternativa: Ferramentas)

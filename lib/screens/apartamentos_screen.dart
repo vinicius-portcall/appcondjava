@@ -37,7 +37,9 @@ class ApartamentosScreen extends StatelessWidget {
       );
       return;
     }
-    await sip.ligarPara(apto, video: video);
+    // entreUnidades esconde os atalhos de portão na tela de chamada —
+    // ver SipService.chamadaEntreUnidades.
+    await sip.ligarPara(apto, video: video, entreUnidades: true);
   }
 
   @override
