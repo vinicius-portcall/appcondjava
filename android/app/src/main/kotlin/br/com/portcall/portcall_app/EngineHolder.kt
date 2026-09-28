@@ -2,6 +2,8 @@ package br.com.portcall.portcall_app
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
@@ -24,6 +26,12 @@ import io.flutter.plugin.common.MethodChannel
 object EngineHolder {
     const val ENGINE_ID = "persistent_engine"
     private const val CHANNEL_NAME = "portcall/persistent_service"
+
+    /** Volume do tom de chamada, 0..100. Baixo de propósito: o tom serve
+     *  pra dizer "está chamando", não pra competir com a voz. */
+    private const val RINGBACK_VOLUME = 60
+
+    private var ringback: ToneGenerator? = null
 
     @Synchronized
     fun getOrCreateEngine(context: Context): FlutterEngine {
@@ -52,6 +60,43 @@ object EngineHolder {
                 "stop" -> {
                     PersistentEngineService.stop(context)
                     result.success(null)
+                }
+                // Tom de chamada (ringback) de quem liga, enquanto o outro
+                // lado toca. Não vem do servidor: o Asterisk responde
+                // "180 Ringing" sem áudio (não manda 183 com early media),
+                // que é o comportamento normal do SIP — quem gera o tom é o
+                // aparelho de quem ligou. Sem isso a ligação fica muda até
+                // alguém atender, e parece que não completou.
+                //
+                // ToneGenerator em vez de tocar um arquivo: é o tom padrão
+                // do próprio Android, não precisa de asset nem de pacote de
+                // áudio novo, e sai pelo canal de voz — então respeita o
+                // viva-voz/fone já escolhido pra chamada.
+                "startRingback" -> {
+                    try {
+                        if (ringback == null) {
+                            ringback = ToneGenerator(
+                                AudioManager.STREAM_VOICE_CALL,
+                                RINGBACK_VOLUME,
+                            )
+                        }
+                        ringback?.startTone(ToneGenerator.TONE_SUP_RINGTONE)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        // Aparelho sem ToneGenerator disponível: a ligação
+                        // segue normalmente, só sem o tom.
+                        result.success(false)
+                    }
+                }
+                "stopRingback" -> {
+                    try {
+                        ringback?.stopTone()
+                        ringback?.release()
+                    } catch (_: Exception) {
+                        // Já liberado/nunca criado — nada a fazer.
+                    }
+                    ringback = null
+                    result.success(true)
                 }
                 "isIgnoringBatteryOptimizations" -> {
                     val ignoring = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {

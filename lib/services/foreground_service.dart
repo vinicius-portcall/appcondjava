@@ -38,6 +38,26 @@ class ForegroundService {
     }
   }
 
+  /// Tom de chamada de quem liga, enquanto o outro lado toca. O servidor
+  /// responde "180 Ringing" sem áudio (comportamento normal do SIP), então
+  /// quem gera o tom é o aparelho — sem isso a ligação fica muda e parece
+  /// que não completou. Ver EngineHolder.kt.
+  static Future<void> iniciarTomDeChamada() async {
+    try {
+      await _channel.invokeMethod('startRingback');
+    } catch (_) {
+      // Sem tom a ligação continua funcionando normalmente.
+    }
+  }
+
+  static Future<void> pararTomDeChamada() async {
+    try {
+      await _channel.invokeMethod('stopRingback');
+    } catch (_) {
+      // idem
+    }
+  }
+
   /// Abre a tela de detalhes do app nas configurações do Android — de lá
   /// dá pra chegar em "Bateria" e escolher "Sem restrições". Em aparelhos
   /// Samsung existe uma camada de gerenciamento de bateria própria (One UI)

@@ -7,6 +7,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'package:uuid/uuid.dart';
 
+import 'foreground_service.dart';
 import 'session_service.dart';
 
 /// Encapsula o registro SIP e as chamadas usando o pacote sip_ua.
@@ -484,6 +485,20 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     final aindaTocando =
         state.state == CallStateEnum.PROGRESS ||
         state.state == CallStateEnum.CALL_INITIATION;
+
+    // Tom de chamada de quem liga: começa quando o outro lado passa a tocar
+    // e para assim que a chamada é atendida ou cai. Só pra chamada que sai
+    // daqui — quem RECEBE já ouve o toque do CallKit.
+    if (!entrante) {
+      if (state.state == CallStateEnum.PROGRESS) {
+        unawaited(ForegroundService.iniciarTomDeChamada());
+      } else if (state.state == CallStateEnum.CONFIRMED ||
+          state.state == CallStateEnum.ACCEPTED ||
+          state.state == CallStateEnum.ENDED ||
+          state.state == CallStateEnum.FAILED) {
+        unawaited(ForegroundService.pararTomDeChamada());
+      }
+    }
 
     // Confere de novo a cada evento enquanto ainda está tocando (não só uma
     // vez no primeiro evento) — o corpo do INVITE (com "m=video") às vezes
