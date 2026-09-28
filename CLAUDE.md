@@ -38,7 +38,9 @@ Repare que é um repositório **local, sem remote**: serve pra desfazer erro e v
 
 Builds Android (`flutter build apk`) que envolvem plugins com dependências nativas pesadas (ex.: Firebase) podem falhar com erros como `immutable workspace ... have been modified` ou transforms do Gradle "corrompidos" — na prática isso costuma ser **limite de caminho longo do Windows (260 caracteres)** truncando a exclusão de subpastas fundas em `C:\Users\<usuário>\.gradle\caches\`, não corrupção de disco de verdade. O `Remove-Item -Recurse -Force` do PowerShell falha *silenciosamente* nesses casos (não lança erro, só deixa lixo pra trás). Para limpar de vez: matar processos `java` (daemon do Gradle preso segurando lock) e apagar `~/.gradle/caches` via `rm -rf` no Git Bash, que lida melhor com caminhos longos. Também vale checar espaço em disco livre antes de builds grandes — historicamente esta máquina já ficou com o disco C: cheio (pasta Downloads acumulando instaladores de Windows/Office na casa de dezenas de GB).
 
-Os dois parágrafos acima valem só pra máquina Windows onde o app foi desenvolvido. Num Mac, o fluxo é o padrão do Flutter (`flutter run -d <id>`), `flutter analyze` funciona normalmente e nada disso se aplica.
+**No Windows, o Modo de Desenvolvedor precisa estar ligado** (Configurações → Sistema → Para desenvolvedores). Sem ele o build falha com `Building with plugins requires symlink support`: o projeto usa `packages/flutter_callkit_incoming` como dependência local, e pacote **com código nativo** vindo de pasta local exige symlink, que o Windows só libera nesse modo. O `packages/sip_ua` não esbarrava nisso por ser Dart puro — então o erro só aparece depois que alguém mexe no CallKit.
+
+Os três parágrafos acima valem só pra máquina Windows onde o app foi desenvolvido. Num Mac, o fluxo é o padrão do Flutter (`flutter run -d <id>`), `flutter analyze` funciona normalmente e nada disso se aplica.
 
 ### Estado do iOS
 

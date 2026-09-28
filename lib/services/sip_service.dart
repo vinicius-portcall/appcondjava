@@ -46,15 +46,22 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   int? get idSalaConferencia =>
       emSalaConferencia ? int.parse(_ultimoDestino!) - 90000 : null;
 
-  /// Ligação de morador pra morador (tela Unidades). A tela de chamada usa
-  /// isso pra esconder os atalhos de portão: abrir o portão faz sentido
-  /// falando com a portaria, não com o vizinho.
+  /// Ligação de morador pra morador. A tela de chamada usa isso pra esconder
+  /// os atalhos de portão: abrir o portão faz sentido falando com a
+  /// portaria, não com o vizinho.
   ///
-  /// Só vale pra chamada que SAIU daqui — numa chamada recebida o app não
-  /// tem como saber se quem ligou é a portaria ou outra unidade (chega só o
-  /// ramal de origem, e o vínculo ramal→unidade mora no servidor).
+  /// Vale nos dois sentidos. Na chamada que sai daqui, quem marca é a tela
+  /// (`ligarPara(entreUnidades: true)`). Na chamada recebida, o app sozinho
+  /// só enxerga o ramal de origem (ex.: 5001) e não tem como saber de quem
+  /// é — o vínculo ramal→unidade mora no servidor. Por isso o
+  /// `portcall_router.agi` identifica a origem no CALLERID como
+  /// "Unidade 102", e é esse prefixo que reconhecemos aqui.
   bool get chamadaEntreUnidades => _entreUnidades;
   bool _entreUnidades = false;
+
+  /// Prefixo que o portcall_router.agi coloca no CALLERID quando quem liga
+  /// é outra unidade. Mudou lá? Mude aqui.
+  static const _prefixoUnidade = 'Unidade ';
 
   SipService() {
     _helper.addSipUaHelperListener(this);
@@ -285,9 +292,10 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     chamadaComVideo = comVideo;
     muted = false;
     _ultimoDestino = null;
-    // Chamada recebida: não dá pra saber se veio da portaria ou de outra
-    // unidade, então mantém os atalhos de portão disponíveis.
-    _entreUnidades = false;
+    // NÃO zera _entreUnidades aqui: numa chamada recebida ele já foi
+    // definido em callStateChanged, a partir do CALLERID que o servidor
+    // montou. Zerar traria os atalhos de portão de volta justamente na
+    // ligação do vizinho.
     altoFalante = comVideo;
     unawaited(
       comVideo
@@ -333,6 +341,32 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// Fone Bluetooth tem precedência sobre o viva-voz: forçar o alto-falante
   /// com um fone conectado seria pior que o problema original.
   Future<void> _aplicarSaidaDeAudio() async {
+    // Numa chamada que passou pelo CallKit (ou seja: toda chamada que o
+    // morador ATENDE), quem decide a rota é o Telecom — ele se registra
+    // como cliente privilegiado e o app, cliente comum, perde a disputa.
+    // Confirmado em `dumpsys audio` durante uma chamada real:
+    //
+    //   app     -> pede SPEAKER   (mIsPrivileged: false)
+    //   telecom -> pede EARPIECE  (mIsPrivileged: true)
+    //   Active communication device: EARPIECE
+    //
+    // Então o pedido tem que sair de dentro do próprio Telecom. É o que o
+    // setAudioRoute (patch local do pacote) faz. Se não houver conexão
+    // CallKit — chamada originada aqui —, ele devolve false e seguimos
+    // pelo caminho normal, que nesse caso funciona.
+    final id = _callKitId;
+    if (id != null) {
+      try {
+        final ok = await FlutterCallkitIncoming.setAudioRoute(
+          id,
+          speaker: altoFalante,
+        );
+        if (ok) return;
+      } catch (_) {
+        // Segue pro caminho antigo.
+      }
+    }
+
     // ESTA é a linha que faz o resto funcionar. O CallKit coloca o
     // AudioManager em MODE_IN_CALL, e nesse modo o flutter_webrtc
     // DESLIGA o roteamento de áudio por conta própria (ver
@@ -449,6 +483,17 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       final body = call.session.request?.body as String?;
       if (body != null && body.contains('m=video')) {
         _ofertaEntranteTemVideoCache = true;
+      }
+    }
+
+    // Quem está ligando é outra unidade? Só dá pra saber pelo CALLERID que o
+    // servidor montou (ver _prefixoUnidade) — o ramal cru não diz nada.
+    // Marcado enquanto ainda toca, pra CallScreen já abrir sem os atalhos
+    // de portão em vez de escondê-los depois, na frente do usuário.
+    if (entrante && aindaTocando) {
+      final nomeOrigem = call.session.remote_identity?.display_name ?? '';
+      if (nomeOrigem.startsWith(_prefixoUnidade)) {
+        _entreUnidades = true;
       }
     }
 

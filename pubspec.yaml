@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.1+2
+version: 1.0.2+3
 
 environment:
   sdk: ^3.12.2
@@ -77,9 +77,17 @@ flutter_launcher_icons:
 # fatiadas entre pacotes de rede, o que derruba a conexão em chamadas de
 # vídeo (SDP grande). Patch local em packages/sip_ua/ até sair uma correção
 # upstream — ver packages/sip_ua/lib/src/transports/tcp_socket_impl.dart.
+# flutter_callkit_incoming: o setAudioRoute do pacote é um stub vazio no
+# Android. Com a conexão self-managed ativa, o Telecom vira cliente
+# PRIVILEGIADO da rota de áudio e o app perde a disputa — o áudio fica preso
+# no fone pra quem atende, por mais que se chame setSpeakerphoneOn. O patch
+# implementa o método de verdade, via Connection.setAudioRoute.
+# Ver packages/flutter_callkit_incoming/.../FlutterCallkitIncomingPlugin.kt.
 dependency_overrides:
   sip_ua:
     path: packages/sip_ua
+  flutter_callkit_incoming:
+    path: packages/flutter_callkit_incoming
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
