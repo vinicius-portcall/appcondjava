@@ -206,16 +206,27 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   static const Map<String, dynamic> _constraintsVideoLeve = <String, dynamic>{
     'mediaConstraints': <String, dynamic>{
       'video': <String, dynamic>{
+        // Os limites vão em `optional`, NUNCA em `mandatory`. No WebRTC,
+        // `mandatory` é exigência: se a câmera não conseguir respeitar o
+        // teto exato, o getUserMedia falha e o aparelho entra na chamada
+        // SEM VÍDEO — foi o que aconteceu ao pôr maxFrameRate: 20 como
+        // obrigatório, já que muita câmera Android só opera a 30fps. O
+        // sintoma no SDP é `m=video 9` com `c=IN IP4 0.0.0.0`.
+        //
+        // Em `optional` o WebRTC aplica o que conseguir e, quando não
+        // conseguir, manda vídeo assim mesmo — que é o que interessa num
+        // interfone: melhor vídeo pesado que nenhum vídeo.
         'mandatory': <String, dynamic>{
           'minWidth': '320',
           'minHeight': '240',
-          'maxWidth': '640',
-          'maxHeight': '480',
-          'minFrameRate': '15',
-          'maxFrameRate': '20',
+          'minFrameRate': '10',
         },
         'facingMode': 'user',
-        'optional': <dynamic>[],
+        'optional': <dynamic>[
+          <String, dynamic>{'maxWidth': '640'},
+          <String, dynamic>{'maxHeight': '480'},
+          <String, dynamic>{'maxFrameRate': '20'},
+        ],
       },
     },
   };
