@@ -486,11 +486,18 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
         state.state == CallStateEnum.PROGRESS ||
         state.state == CallStateEnum.CALL_INITIATION;
 
-    // Tom de chamada de quem liga: começa quando o outro lado passa a tocar
-    // e para assim que a chamada é atendida ou cai. Só pra chamada que sai
-    // daqui — quem RECEBE já ouve o toque do CallKit.
+    // Tom de chamada de quem liga: começa quando a ligação sai e para assim
+    // que a chamada é atendida ou cai. Só pra chamada que sai daqui — quem
+    // RECEBE já ouve o toque do CallKit.
+    //
+    // Começa tanto no CALL_INITIATION quanto no PROGRESS de propósito: o
+    // PROGRESS depende do servidor responder "180 Ringing", e quando ele
+    // atalha esse passo o tom nunca começava. O lado nativo ignora o segundo
+    // pedido se o tom já estiver saindo, então pedir duas vezes não corta o
+    // tom no meio — ver EngineHolder.iniciarRingback().
     if (!entrante) {
-      if (state.state == CallStateEnum.PROGRESS) {
+      if (state.state == CallStateEnum.CALL_INITIATION ||
+          state.state == CallStateEnum.PROGRESS) {
         unawaited(ForegroundService.iniciarTomDeChamada());
       } else if (state.state == CallStateEnum.CONFIRMED ||
           state.state == CallStateEnum.ACCEPTED ||
