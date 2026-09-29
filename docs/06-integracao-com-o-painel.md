@@ -20,6 +20,33 @@ Busca a identidade visual do condomínio:
 }
 ```
 
+#### `modulos` — quais opções o condomínio liberou
+
+A mesma resposta carrega a lista de opções que a administração habilitou para
+o condomínio, no campo `modulos`:
+
+```json
+{
+  "ok": true,
+  "app_nome": "Nome do Condomínio",
+  "modulos": ["unidades", "cameras", "mural", "ordem_chamada"]
+}
+```
+
+As chaves válidas estão em `lib/models/modulos_app.dart` (`ModulosApp.todas`)
+e são as mesmas gravadas no banco do painel — **renomear uma chave faz o
+módulo sumir da tela do morador sem ninguém ter desmarcado nada**. Para mudar
+o texto exibido, mude o rótulo na tela, nunca a chave.
+
+O app **erra sempre para o lado de mostrar**: campo ausente (painel numa
+versão anterior a este recurso), valor que não seja uma lista, ou lista vazia
+resultam em todas as opções visíveis. Só uma lista não vazia esconde alguma
+coisa. Isso é deliberado — um painel fora do ar deixaria o morador com o app
+pela metade e sem nenhuma pista do motivo, o que é pior do que ver uma opção
+que o condomínio não usa. Pela mesma razão a lista é guardada em cache junto
+do branding (`SessionService.saveBranding`): sem isso a seleção se perderia a
+cada falha de rede.
+
 Mapeado para o modelo `Branding` (`lib/models/branding.dart`). **É tolerante a falhas**: qualquer exceção (rede, timeout, JSON inválido) ou `ok != true` faz o método devolver `Branding.fallback()` (nome fixo "Portcall", sem logo) em vez de propagar o erro — a tela inicial nunca trava por causa do branding.
 
 ### `fetchBotoes(ramal, senha)` → `GET api_botoes.php?ramal=&senha=`

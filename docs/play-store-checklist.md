@@ -122,7 +122,17 @@ formulário próprio no Console; as respostas abaixo descrevem o uso real.
 
 ### `RECORD_AUDIO` e `CAMERA`
 > Áudio e vídeo bidirecionais durante a chamada do interfone, mais leitura
-> de QR Code de configuração e cadastro facial opcional. Nada é gravado.
+> de QR Code de configuração e cadastro facial opcional. O áudio das
+> chamadas é gravado no servidor do condomínio para fins de segurança,
+> conforme informado na política de privacidade.
+
+**Não escreva "nada é gravado" em nenhum formulário.** O Asterisk grava o
+áudio de toda chamada em `/mnt/hd2/gravacao/` (via `MixMonitor`, definido em
+`/etc/asterisk/funcoes/macros.conf` no servidor — não em `extensions.conf`,
+que é onde é natural procurar e não achar). A política de privacidade
+publicada declara a gravação; o formulário de Segurança dos Dados tem que
+dizer o mesmo, senão o app é suspenso por declaração divergente. O vídeo
+não é gravado, só o áudio.
 
 ## Declaração de dados (Data safety)
 
@@ -133,10 +143,18 @@ formulário próprio no Console; as respostas abaixo descrevem o uso real.
 | Usuário pode pedir exclusão? | Sim (pela administração/contato) |
 | Compartilha com terceiros? | Não vende; usa Firebase só para entregar notificação |
 
-Tipos declarados: **Informações pessoais** (identificador da unidade),
-**Áudio/Vídeo** (chamadas, não gravadas), **Fotos** (cadastro facial —
-declarar como *dado biométrico*, opcional), **IDs do dispositivo** (token
-de notificação).
+Tipos declarados, com o nome exato que aparece no formulário:
+
+| Categoria | Tipo | Obrigatório? | Finalidade |
+|---|---|---|---|
+| Informações pessoais | IDs de usuário (o ramal identifica a unidade) | Sim | Funcionalidade do app |
+| Áudio | Gravações de voz ou som | Sim | Funcionalidade do app; Segurança |
+| Fotos e vídeos | Fotos (cadastro facial) | **Não** — opcional | Funcionalidade do app |
+| Atividade no app | Outras ações (aberturas de portão, avisos, encomendas) | Sim | Funcionalidade do app |
+| ID do dispositivo | IDs do dispositivo (token FCM) | Sim | Funcionalidade do app |
+
+O vídeo da chamada **não** entra como coletado: ele só trafega em tempo real,
+não fica armazenado. O áudio entra, porque é gravado.
 
 > Atenção: o cadastro facial é biometria, dado sensível pela LGPD. Declare
 > como opcional e garanta que a remoção funcione — o app já tem a tela de
