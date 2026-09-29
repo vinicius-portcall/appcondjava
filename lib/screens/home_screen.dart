@@ -11,6 +11,7 @@ import '../models/aviso.dart';
 import '../models/branding.dart';
 import '../models/documento.dart';
 import '../models/manutencao.dart';
+import '../models/modulos_app.dart';
 import '../services/api_service.dart';
 import '../services/foreground_service.dart';
 import '../services/push_service.dart';
@@ -118,6 +119,11 @@ class _HomeScreenState extends State<HomeScreen> {
       // registra com o que já estiver concedido de uma sessão anterior.
     }
   }
+
+  /// Se a opção foi liberada pela administração no painel. Enquanto o
+  /// branding não chegou (primeira abertura, painel fora do ar), `_branding`
+  /// é o fallback e tudo aparece — ver `Branding.moduloLiberado`.
+  bool _liberado(String modulo) => _branding.moduloLiberado(modulo);
 
   Future<void> _recarregarDados() async {
     Branding branding;
@@ -746,7 +752,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSpacing: 10,
                         childAspectRatio: 0.92,
                         children: [
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.unidades)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.home_rounded,
@@ -759,7 +765,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ? _abrirApartamentos
                                 : null,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.cameras)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.videocam_rounded,
@@ -767,7 +773,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Câmeras',
                             onTap: _abrirCameras,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.mural)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.campaign_rounded,
@@ -778,7 +784,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : null,
                             onTap: _abrirMural,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.manutencoes)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.build_circle_outlined,
@@ -789,7 +795,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : null,
                             onTap: _abrirManutencoes,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.ouvidoria)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.forum_outlined,
@@ -797,7 +803,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Ouvidoria',
                             onTap: _abrirOuvidoria,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.encomendas)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.inventory_2_outlined,
@@ -805,7 +811,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Encomendas',
                             onTap: _abrirEncomendas,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.documentos)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.description_outlined,
@@ -816,7 +822,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : null,
                             onTap: _abrirDocumentos,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.acessos)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.door_front_door_outlined,
@@ -827,7 +833,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 : null,
                             onTap: _abrirHistoricoAcessos,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.visitantes)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.qr_code_2_rounded,
@@ -835,7 +841,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Visitantes',
                             onTap: _abrirVisitantesQr,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.agendamentos)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.pool_rounded,
@@ -843,7 +849,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Agendamentos',
                             onTap: _abrirAgendamentos,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.interfonia)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.phone_in_talk_outlined,
@@ -851,7 +857,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Interfonia',
                             onTap: _abrirInterfonia,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.ordemChamada)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.swap_vert_rounded,
@@ -859,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Ordem de Chamada',
                             onTap: _abrirRota,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.bateria)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.battery_alert_rounded,
@@ -867,7 +873,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Bateria',
                             onTap: _abrirConfiguracoesBateria,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.facial)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.face_retouching_natural_rounded,
@@ -875,7 +881,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             titulo: 'Cadastro Facial',
                             onTap: _abrirCadastroFacial,
                           ),
-                          _tileAcaoRapida(
+                          if (_liberado(ModulosApp.reunioes)) _tileAcaoRapida(
                             context,
                             colors: colors,
                             icone: Icons.groups_rounded,

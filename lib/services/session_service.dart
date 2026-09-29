@@ -30,6 +30,7 @@ class SessionService {
   static const _kBrandingAppNome = 'branding_app_nome';
   static const _kBrandingCondominioNome = 'branding_condominio_nome';
   static const _kBrandingLogoUrl = 'branding_logo_url';
+  static const _kBrandingModulos = 'branding_modulos';
 
   Future<void> save(SipAccount account) async {
     final prefs = await SharedPreferences.getInstance();
@@ -73,6 +74,7 @@ class SessionService {
     await prefs.remove(_kBrandingAppNome);
     await prefs.remove(_kBrandingCondominioNome);
     await prefs.remove(_kBrandingLogoUrl);
+    await prefs.remove(_kBrandingModulos);
   }
 
   /// Guarda o último branding buscado com sucesso, pra tela de abertura
@@ -90,6 +92,15 @@ class SessionService {
     } else {
       await prefs.remove(_kBrandingLogoUrl);
     }
+    // Sem isso, toda vez que o painel ficasse fora do ar o morador voltaria a
+    // ver as opções que a administração escondeu — o cache é justamente o que
+    // segura a seleção até o painel responder de novo.
+    final modulos = branding.modulosLiberados;
+    if (modulos != null) {
+      await prefs.setStringList(_kBrandingModulos, modulos.toList());
+    } else {
+      await prefs.remove(_kBrandingModulos);
+    }
   }
 
   Future<Branding?> loadBranding() async {
@@ -101,6 +112,7 @@ class SessionService {
       appNome: appNome,
       condominioNome: prefs.getString(_kBrandingCondominioNome),
       logoUrl: prefs.getString(_kBrandingLogoUrl),
+      modulosLiberados: prefs.getStringList(_kBrandingModulos)?.toSet(),
     );
   }
 
