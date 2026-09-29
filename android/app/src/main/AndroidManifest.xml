@@ -54,6 +54,21 @@
             </intent-filter>
         </receiver>
 
+        <!-- Acorda o app pelo push de chamada, sem passar pelo Dart: o handler
+             de segundo plano do Firebase roda num engine onde o canal
+             portcall/persistent_service não existe. Ver PortcallWakeReceiver.
+             exported=true + permission SEND é o que o Google Play Services
+             exige pra entregar o broadcast; sem a permissão, qualquer app
+             poderia disparar isso. Mesmo par que o receiver do plugin usa. -->
+        <receiver
+            android:name=".PortcallWakeReceiver"
+            android:exported="true"
+            android:permission="com.google.android.c2dm.permission.SEND">
+            <intent-filter>
+                <action android:name="com.google.android.c2dm.intent.RECEIVE"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

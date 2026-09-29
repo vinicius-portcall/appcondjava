@@ -72,6 +72,7 @@ class _HomeScreenState extends State<HomeScreen> {
   List<AcessoPortao> _historicoAcessos = [];
   bool _carregandoBotoes = true;
   bool _callScreenAberta = false;
+  bool _notificacoesBloqueadas = false;
   late final AppLifecycleListener _lifecycleListener;
 
   @override
@@ -125,6 +126,94 @@ class _HomeScreenState extends State<HomeScreen> {
   /// é o fallback e tudo aparece — ver `Branding.moduloLiberado`.
   bool _liberado(String modulo) => _branding.moduloLiberado(modulo);
 
+  /// Com a permissão de notificação negada, o Android descarta em silêncio
+  /// todo aviso de mural, encomenda e manutenção — sem erro nenhum, nem no
+  /// celular nem no servidor (o Firebase responde "entregue" do mesmo jeito).
+  /// Já aconteceu de moradores ficarem sem receber aviso nenhum por dias sem
+  /// ninguém desconfiar, então a tela avisa em vez de deixar quieto.
+  ///
+  /// A chamada de interfone NÃO depende disso — ela chega por mensagem de
+  /// dados, que o app processa sozinho. É justamente o que torna o problema
+  /// difícil de perceber: o interfone toca normalmente e só os avisos somem.
+  Future<void> _conferirPermissaoNotificacao() async {
+    try {
+      final status = await Permission.notification.status;
+      if (!mounted) return;
+      final bloqueadas = !status.isGranted;
+      if (bloqueadas != _notificacoesBloqueadas) {
+        setState(() => _notificacoesBloqueadas = bloqueadas);
+      }
+    } catch (_) {
+      // Sem Activity anexada (engine subindo em segundo plano): não dá pra
+      // consultar agora, e o aviso é só visual — fica pra próxima abertura.
+    }
+  }
+
+  Widget _avisoNotificacoes(AppColors colors) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: colors.isDark ? 0.14 : 0.18),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.notifications_off_rounded,
+                size: 20,
+                color: colors.isDark
+                    ? Colors.amber.shade200
+                    : Colors.amber.shade900,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Notificações desativadas',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: colors.textBright,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Você não vai receber avisos do mural, encomendas nem manutenções. '
+            'As chamadas do interfone continuam funcionando normalmente.',
+            style: TextStyle(fontSize: 13, color: colors.textMuted),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _ativarNotificacoes,
+              icon: const Icon(Icons.settings_rounded, size: 18),
+              label: const Text('Ativar notificações'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Pede a permissão de novo; se o Android não mostrar mais o diálogo
+  /// (negada permanentemente, que é o caso depois de recusar uma vez), abre
+  /// direto a tela de configurações do app — senão o botão não faria nada e
+  /// o morador ficaria sem saída.
+  Future<void> _ativarNotificacoes() async {
+    final status = await Permission.notification.request();
+    if (!status.isGranted) {
+      await openAppSettings();
+    }
+    await _conferirPermissaoNotificacao();
+  }
+
   Future<void> _recarregarDados() async {
     Branding branding;
     try {
@@ -160,6 +249,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _historicoAcessos = historicoAcessos;
       _carregandoBotoes = false;
     });
+
+    // Confere a cada volta pro primeiro plano, não só na abertura: o morador
+    // sai do app, libera a permissão nas configurações e volta — o aviso tem
+    // que desaparecer sozinho, senão parece que não funcionou.
+    unawaited(_conferirPermissaoNotificacao());
   }
 
   /// O registro SIP vem PRIMEIRO de propósito, e todo o resto é
@@ -734,6 +828,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 : ListView(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
                     children: [
+                      if (_notificacoesBloqueadas) _avisoNotificacoes(colors),
                       Text(
                         'AÇÕES RÁPIDAS',
                         style: TextStyle(
