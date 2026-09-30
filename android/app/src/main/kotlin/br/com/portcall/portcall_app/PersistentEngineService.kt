@@ -64,6 +64,12 @@ class PersistentEngineService : Service() {
         val ramal = intent?.getStringExtra(EXTRA_RAMAL) ?: lastRamal
         startForegroundNotification(ramal)
         acquireWakeLock()
+        // Deixa um alarme pendente enquanto o Service está vivo. O
+        // onDestroy() abaixo só roda quando o Android encerra o Service com
+        // educação — num kill à força (memória, gerenciador de bateria) ele
+        // nunca é chamado, e sem isso não sobrava nada pra trazer o ramal de
+        // volta. Ver RestartReceiver.VIGILANCIA_MS.
+        RestartReceiver.agendarVigilancia(applicationContext)
         return START_STICKY
     }
 
