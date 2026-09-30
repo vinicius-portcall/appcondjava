@@ -10,10 +10,29 @@ app: mexeu em permissão, revise a justificativa aqui antes de enviar.
 |---|---|
 | Nome do app | **Vídeo Atende** |
 | Pacote (`applicationId`) | `br.com.portcall.portcall_app` — **não muda depois de publicado** |
-| Versão | `1.0.0+1` (`pubspec.yaml`) |
+| Versão | `1.0.5+6` (`pubspec.yaml`) |
 | Assinatura | keystore de release em `android/keystore/` (fora do git) |
 | Política de privacidade | https://clienteauto.portcallvoip.com.br/privacidade.html |
-| Conta Play Console | criada, **aguardando verificação do Google** |
+| Conta Play Console | verificada; ficha em preenchimento, teste fechado |
+| Arquivo pra loja | `.aab` (a loja **não aceita APK**) — `flutter build appbundle --release` a partir de `C:\dev\appcondjava` |
+| Login do revisor | ramal `5599`, senha em `play-store/credenciais-revisor-google.txt` (fora do git) |
+
+> **O nome do pacote é digitado na criação do app e é definitivo.** Cole, não
+> digite: já houve uma tentativa em que faltou o `p` final
+> (`br.com.portcall.portcall_ap`), o upload foi recusado, e a única saída foi
+> apagar o rascunho e criar outro app. Termina em `_app`.
+
+> **ID de publicidade: responda que NÃO usa.** Verificado no `.aab`: não há
+> permissão `com.google.android.gms.permission.AD_ID`, nenhuma permissão
+> `com.google.android.gms.*` e nenhum `AdvertisingIdClient` — as únicas
+> dependências Firebase são `firebase_core` e `firebase_messaging`, sem
+> `firebase_analytics`.
+
+> **A política de privacidade precisa estar também DENTRO do app**, não só na
+> ficha — é causa comum de reprovação. Está no menu (⋮) da tela inicial, ver
+> `home_screen.dart`. O certificado do `clienteauto` vence em 21/12/2026: se a
+> renovação do Let's Encrypt falhar, a política sai do ar, e política
+> inacessível é violação de política do Google, não só link quebrado.
 
 > O nome leva acento — **Vídeo Atende** — para bater com o banner e o
 > material de marca do cliente.
@@ -40,36 +59,42 @@ Atenda o interfone do seu condomínio pelo celular, com áudio e vídeo.
 ```
 O Vídeo Atende transforma seu celular no interfone do condomínio.
 
-Receba a chamada da portaria onde estiver, veja quem está na entrada pela
-câmera e libere o acesso — sem depender do aparelho fixo na parede.
+Receba a chamada da portaria onde estiver, veja quem está na entrada pela câmera e libere o acesso — sem depender do aparelho fixo na parede.
 
 PRINCIPAIS RECURSOS
 
 • Chamadas de áudio e vídeo do interfone direto no celular
 • Abertura de portões e portas durante a chamada
 • Ligação para outras unidades do condomínio
-• Ordem de toque configurável: escolha se toca primeiro o app, o celular
-  ou o ramal fixo
-• Bloqueio de unidades: escolha quem não pode te ligar
-• Mural de avisos, encomendas, documentos e reserva de espaços
-• Registro de acessos e alertas de emergência
-• Cadastro facial para entrada sem chave (opcional)
+• Ordem de toque: escolha o que chama primeiro — o aplicativo, seu celular ou o ramal fixo
+• Bloqueio de unidades: escolha quem não pode ligar para você
+• Câmeras do condomínio ao vivo
+• Mural de avisos, encomendas, documentos e reserva de espaços comuns
+• Histórico de acessos e alerta de emergência
+• Cadastro facial para entrar sem chave (opcional)
+
+O QUE APARECE DEPENDE DO SEU CONDOMÍNIO
+
+A administração escolhe quais recursos ficam disponíveis. Se alguma das opções acima não aparecer no seu aplicativo, é porque o seu condomínio não utiliza esse recurso — fale com a administração.
 
 COMO FUNCIONA
 
-O aplicativo é fornecido pelo seu condomínio. Use o ramal e a senha que a
-administração forneceu, ou aponte a câmera para o QR Code de configuração.
+O aplicativo é fornecido pelo seu condomínio. Entre com o ramal e a senha que a administração forneceu, ou aponte a câmera para o QR Code de configuração.
 
-Se o seu condomínio ainda não usa o sistema, fale com a administração.
+Depois de entrar, o aplicativo continua recebendo chamadas mesmo fechado ou com a tela apagada, como o telefone do seu celular.
+
+Se o seu condomínio ainda não usa o sistema, fale com a administração para conhecer.
 
 PRIVACIDADE
 
-As chamadas do interfone são gravadas para segurança do condomínio. O
-cadastro facial é sempre opcional e pode ser removido a qualquer momento.
-Consulte a política de privacidade.
+As chamadas do interfone são gravadas e ficam guardadas no servidor do sistema, para segurança do condomínio.
+
+O cadastro facial é opcional: se você não quiser usá-lo, continua entrando normalmente pelos outros meios definidos pelo condomínio, e o aplicativo funciona igual em tudo o mais. Você pode remover seu cadastro a qualquer momento, pelo próprio aplicativo.
+
+A política de privacidade, com todos os dados usados e para quê, está disponível dentro do aplicativo e no endereço informado nesta página.
 ```
 
-**Categoria:** Estilo de vida (alternativa: Ferramentas)
+**Categoria:** Comunicação (descreve melhor um interfone; pode ser trocada depois a qualquer momento, diferente do nome do pacote)
 **Tags:** interfone, condomínio, portaria, videoporteiro
 **E-mail de contato:** `portcallvoip@gmail.com` (o mesmo da política de
 privacidade — o Google compara os dois)
