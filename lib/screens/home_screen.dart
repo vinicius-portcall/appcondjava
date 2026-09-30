@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:sip_ua/sip_ua.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/acesso_portao.dart';
 import '../models/app_button.dart';
@@ -381,6 +382,26 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Abre a política de privacidade no navegador.
+  ///
+  /// O endereço é derivado da `painelUrl` da sessão em vez de ficar fixo no
+  /// código: o arquivo é servido pelo mesmo painel que responde as APIs, então
+  /// apontar pra outro lugar seria criar uma segunda verdade pra manter.
+  Future<void> _abrirPoliticaPrivacidade() async {
+    final base = widget.conta.painelUrl.replaceAll(RegExp(r'/+$'), '');
+    final uri = Uri.tryParse('$base/privacidade.html');
+    final abriu =
+        uri != null &&
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!abriu && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Não foi possível abrir a política de privacidade.'),
+        ),
+      );
+    }
+  }
+
   Future<void> _sair() async {
     await _sip.desconectar();
     await ForegroundService.stop();
@@ -721,6 +742,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? Icons.light_mode_rounded
                   : Icons.dark_mode_rounded,
             ),
+          ),
+          // A Play Store exige o link da política de privacidade dentro do
+          // app, não só na página da loja — é causa comum de reprovação.
+          PopupMenuButton<String>(
+            tooltip: 'Mais',
+            onSelected: (opcao) {
+              if (opcao == 'privacidade') _abrirPoliticaPrivacidade();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem<String>(
+                value: 'privacidade',
+                child: Row(
+                  children: [
+                    Icon(Icons.privacy_tip_outlined, size: 20),
+                    SizedBox(width: 10),
+                    Text('Política de Privacidade'),
+                  ],
+                ),
+              ),
+            ],
           ),
           IconButton(onPressed: _sair, icon: const Icon(Icons.logout)),
         ],
