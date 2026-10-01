@@ -23,6 +23,20 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   StreamSubscription<CallEvent?>? _callKitSub;
   String? _callKitId;
 
+  /// Quem está ligando, guardado enquanto a chamada entrante toca — depois
+  /// que ela termina o `remote_identity` já não está mais disponível, e é
+  /// justamente aí que a notificação de perdida precisa do nome.
+  String? _nomeEntrante;
+  String? _numeroEntrante;
+
+  /// A chamada entrante chegou a ser atendida? Usado para decidir se vira
+  /// "chamada perdida" quando termina.
+  bool _entranteAtendida = false;
+
+  /// O morador recusou de propósito? Telefone nenhum mostra "perdida" quando
+  /// a pessoa aperta recusar — ela sabe que a chamada existiu.
+  bool _entranteRecusada = false;
+
   RegistrationStateEnum registrationState = RegistrationStateEnum.NONE;
   Call? activeCall;
   CallStateEnum callState = CallStateEnum.NONE;
@@ -89,8 +103,13 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   void _onCallKitEvent(CallEvent? event) {
     switch (event) {
       case CallEventActionCallAccept():
+        _entranteAtendida = true;
         atender();
       case CallEventActionCallDecline():
+        // Recusa deliberada não vira "perdida" — o morador já sabe que
+        // ligaram, foi ele quem dispensou.
+        _entranteRecusada = true;
+        desligar();
       case CallEventActionCallTimeout():
         desligar();
       default:
@@ -105,6 +124,14 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     final nome = (remoteId?.display_name?.isNotEmpty == true)
         ? remoteId!.display_name!
         : (numero ?? 'Desconhecido');
+
+    // Guardados pra notificação de chamada perdida: quando a chamada termina,
+    // a sessão já foi embora e não dá mais pra ler quem era.
+    _nomeEntrante = nome;
+    _numeroEntrante = numero;
+    _entranteAtendida = false;
+    _entranteRecusada = false;
+
     await FlutterCallkitIncoming.showCallkitIncoming(
       CallKitParams(
         id: _callKitId!,
@@ -125,6 +152,39 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
         ),
       ),
     );
+  }
+
+  /// Deixa a notificação de chamada perdida no celular, como faz o telefone.
+  ///
+  /// Sem isso, uma chamada do interfone que o morador não ouviu não deixava
+  /// rastro nenhum: ele descobria depois, pelo visitante, que alguém tinha
+  /// tocado. O canal já estava declarado em AndroidParams
+  /// (`missedCallNotificationChannelName`), só faltava chamar o método.
+  ///
+  /// NÃO é mostrada quando o morador recusa de propósito — telefone nenhum
+  /// avisa "perdida" para uma chamada que a pessoa dispensou.
+  Future<void> _notificarChamadaPerdida() async {
+    final nome = _nomeEntrante;
+    if (nome == null) return;
+    try {
+      await FlutterCallkitIncoming.showMissCallNotification(
+        CallKitParams(
+          id: _uuid.v4(),
+          nameCaller: nome,
+          appName: 'Portcall',
+          handle: _numeroEntrante ?? nome,
+          type: 0,
+          android: const AndroidParams(
+            isCustomNotification: true,
+            missedCallNotificationChannelName: 'Chamada perdida',
+          ),
+        ),
+      );
+    } catch (e) {
+      // Melhor esforço: a notificação é um conforto, não pode derrubar o
+      // encerramento da chamada se falhar.
+      debugPrint('[Portcall] notificação de chamada perdida falhou: $e');
+    }
   }
 
   Future<void> _encerrarChamadaKit() async {
@@ -308,6 +368,11 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// aceite via CallKit, tela bloqueada). Passe explicitamente pra respeitar
   /// a escolha do usuário na tela de chamada (atender com ou sem vídeo).
   void atender({bool? video}) {
+    // Também marcado aqui, e não só no evento do CallKit: o morador pode
+    // atender pelo botão da própria tela do app, caminho que não passa pelo
+    // CallKit — sem isso, uma chamada atendida assim viraria "perdida" ao
+    // terminar.
+    _entranteAtendida = true;
     final comVideo = video ?? ofertaEntranteTemVideo;
     chamadaComVideo = comVideo;
     muted = false;
@@ -582,6 +647,17 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     callState = state.state;
     if (state.state == CallStateEnum.ENDED ||
         state.state == CallStateEnum.FAILED) {
+      // Chamada que chegou, nunca foi atendida e não foi recusada de
+      // propósito = perdida. Cobre tanto o tempo esgotado do CallKit quanto
+      // quem desistiu e desligou enquanto ainda tocava.
+      if (entrante && !_entranteAtendida && !_entranteRecusada) {
+        unawaited(_notificarChamadaPerdida());
+      }
+      _nomeEntrante = null;
+      _numeroEntrante = null;
+      _entranteAtendida = false;
+      _entranteRecusada = false;
+
       activeCall = null;
       localStream = null;
       remoteStream = null;
