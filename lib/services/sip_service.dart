@@ -174,6 +174,18 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
           appName: 'Portcall',
           handle: _numeroEntrante ?? nome,
           type: 0,
+          // Sem este bloco a notificação aparece, mas MUDA: o lado Android lê
+          // o texto de `subtitle` (EXTRA_CALLKIT_MISSED_CALL_SUBTITLE) e, se
+          // vier vazio, mostra só o nome de quem ligou — sem dizer que foi
+          // uma chamada perdida.
+          missedCallNotification: const NotificationParams(
+            showNotification: true,
+            subtitle: 'Chamada perdida',
+            // O botão de "ligar de volta" fica desligado de propósito: o
+            // evento dele ainda não é tratado em _onCallKitEvent, e botão que
+            // não faz nada ao ser tocado é pior do que botão nenhum.
+            isShowCallback: false,
+          ),
           android: const AndroidParams(
             isCustomNotification: true,
             missedCallNotificationChannelName: 'Chamada perdida',
