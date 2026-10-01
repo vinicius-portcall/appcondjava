@@ -6,6 +6,7 @@ import '../models/app_button.dart';
 import '../models/aviso.dart';
 import '../models/branding.dart';
 import '../models/acesso_portao.dart';
+import '../models/chamada_historico.dart';
 import '../models/chamado.dart';
 import '../models/documento.dart';
 import '../models/encomenda.dart';
@@ -215,6 +216,31 @@ class ApiService {
 
     return (json['acessos'] as List<dynamic>? ?? [])
         .map((e) => AcessoPortao.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Histórico de chamadas do morador, lido do CDR do Asterisk no servidor.
+  ///
+  /// A classificação em recebida/efetuada/perdida vem pronta do servidor — ele
+  /// é quem sabe quais números são do morador (o ramal mais as unidades que a
+  /// rota aponta pra ele). Ver `api_historico_chamadas.php`.
+  Future<List<ChamadaHistorico>> fetchHistoricoChamadas(
+    String ramal,
+    String senha,
+  ) async {
+    final res = await http
+        .get(
+          _uri('api_historico_chamadas.php', {'ramal': ramal, 'senha': senha}),
+        )
+        .timeout(const Duration(seconds: 8));
+
+    final json = jsonDecode(res.body) as Map<String, dynamic>;
+    if (json['ok'] != true) {
+      throw Exception(json['error'] ?? 'Erro ao buscar histórico de chamadas.');
+    }
+
+    return (json['chamadas'] as List<dynamic>? ?? [])
+        .map((e) => ChamadaHistorico.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

@@ -29,6 +29,7 @@ import 'documentos_screen.dart';
 import 'emergencia_screen.dart';
 import 'encomendas_screen.dart';
 import 'historico_acessos_screen.dart';
+import 'historico_chamadas_screen.dart';
 import 'interfonia_screen.dart';
 import 'login_screen.dart';
 import 'manutencoes_screen.dart';
@@ -652,6 +653,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _abrirHistoricoChamadas() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            HistoricoChamadasScreen(api: _api, conta: widget.conta),
+      ),
+    );
+  }
+
   void _abrirSalasConferencia() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -1024,6 +1034,14 @@ class _HomeScreenState extends State<HomeScreen> {
                             cor: colors.tileAccents[7],
                             titulo: 'Reuniões',
                             onTap: _abrirSalasConferencia,
+                          ),
+                          if (_liberado(ModulosApp.historicoChamadas)) _tileAcaoRapida(
+                            context,
+                            colors: colors,
+                            icone: Icons.phone_callback_rounded,
+                            cor: colors.tileAccents[0],
+                            titulo: 'Chamadas',
+                            onTap: _abrirHistoricoChamadas,
                           ),
                         ],
                       ),

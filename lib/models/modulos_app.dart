@@ -28,6 +28,7 @@ class ModulosApp {
   static const bateria = 'bateria';
   static const facial = 'facial';
   static const reunioes = 'reunioes';
+  static const historicoChamadas = 'historico_chamadas';
 
   /// Todas as chaves, na mesma ordem em que aparecem na tela inicial.
   static const todas = <String>[
@@ -46,5 +47,6 @@ class ModulosApp {
     bateria,
     facial,
     reunioes,
+    historicoChamadas,
   ];
 }

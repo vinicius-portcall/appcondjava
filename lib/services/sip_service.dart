@@ -248,11 +248,19 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // vídeo, começa no fone de ouvido normal (igual ligação de telefone
     // comum) — o usuário decide se quer viva-voz pelo botão na tela.
     altoFalante = video;
-    unawaited(
-      video
-          ? Helper.setSpeakerphoneOnButPreferBluetooth()
-          : Helper.setSpeakerphoneOn(false),
-    );
+    // Enquanto CHAMA, o som vai pro alto-falante mesmo na ligação de áudio —
+    // e isso não é o mesmo que `altoFalante`, que guarda a rota desejada pra
+    // conversa (fone no áudio, viva-voz no vídeo).
+    //
+    // O tom de chamada sai pelo canal de voz (ver EngineHolder), e no fone de
+    // ouvido ele é inaudível com o celular na mão: quem discou ouvia silêncio
+    // e achava que a ligação não tinha completado. Só a chamada de vídeo
+    // parecia funcionar, porque já começava no viva-voz.
+    //
+    // Em CONFIRMED, `_aplicarSaidaDeAudio()` devolve a rota escolhida acima —
+    // é o mesmo ponto que já corrigia a assimetria do CallKit, então o
+    // comportamento durante a conversa não muda em nada.
+    unawaited(Helper.setSpeakerphoneOnButPreferBluetooth());
     // customOptions só quando há vídeo: o merge do sip_ua é recursivo, e
     // sobrepor um Map em cima de `video: false` transformaria uma chamada
     // de áudio em vídeo sem querer.
