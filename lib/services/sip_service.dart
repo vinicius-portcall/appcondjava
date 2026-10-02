@@ -7,6 +7,8 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/interfone.dart';
+import 'api_service.dart';
 import 'foreground_service.dart';
 import 'session_service.dart';
 
@@ -36,6 +38,26 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// O morador recusou de propósito? Telefone nenhum mostra "perdida" quando
   /// a pessoa aperta recusar — ela sabe que a chamada existiu.
   bool _entranteRecusada = false;
+
+  /// A conta da sessão, guardada no conectar() — usada pra buscar a lista de
+  /// interfones quando uma chamada chega.
+  SipAccount? _conta;
+
+  /// Interfones do condomínio, com a câmera que o painel associou a cada um.
+  /// Buscados sob demanda e mantidos em memória: a lista muda raramente e a
+  /// chamada não pode esperar rede pra decidir o que mostrar.
+  List<Interfone>? _interfones;
+
+  /// Câmera a mostrar na chamada atual, quando quem liga é um interfone com
+  /// câmera associada no painel. Nulo em chamada de unidade ou de interfone
+  /// sem câmera.
+  String? cameraDaChamadaUrl;
+  String? cameraDaChamadaNome;
+
+  /// Fonte de vídeo escolhida pelo morador durante a chamada. Só faz
+  /// diferença quando existem as duas (vídeo do interfone e câmera) — é o
+  /// botão de alternar da tela de chamada.
+  bool mostrandoCamera = false;
 
   RegistrationStateEnum registrationState = RegistrationStateEnum.NONE;
   Call? activeCall;
@@ -132,6 +154,11 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     _entranteAtendida = false;
     _entranteRecusada = false;
 
+    // Sem await: a decisão sobre a câmera não pode atrasar a tela de chamada
+    // aparecer. Quando a resposta chega, o notifyListeners() de dentro faz a
+    // tela se atualizar sozinha.
+    unawaited(_resolverCameraDaChamada(numero));
+
     await FlutterCallkitIncoming.showCallkitIncoming(
       CallKitParams(
         id: _callKitId!,
@@ -187,7 +214,19 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
             isShowCallback: false,
           ),
           android: const AndroidParams(
-            isCustomNotification: true,
+            // FALSE aqui de propósito, diferente da chamada entrante.
+            //
+            // Com `true`, o CallkitNotificationManager monta a notificação com
+            // um RemoteViews próprio (layout_custom_miss_notification) que só
+            // preenche o nome de quem ligou — e o texto definido em
+            // `subtitle` vai pro setSubText do builder padrão, que o layout
+            // customizado substitui. Resultado: a notificação aparecia sem
+            // dizer que era uma chamada perdida.
+            //
+            // Com `false` vale o estilo padrão do Android, que mostra o
+            // subtexto e ainda usa CATEGORY_MISSED_CALL — o sistema agrupa e
+            // apresenta como o telefone faz.
+            isCustomNotification: false,
             missedCallNotificationChannelName: 'Chamada perdida',
           ),
         ),
@@ -233,7 +272,55 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       callState != CallStateEnum.ENDED &&
       callState != CallStateEnum.FAILED;
 
+  /// Descobre se quem está ligando é um interfone com câmera associada.
+  ///
+  /// A busca é feita aqui, e não na tela, de propósito: quando o celular
+  /// recebe a chamada com o app fechado não existe Activity nenhuma, nenhum
+  /// widget é construído e nada do lado da interface chega a rodar — mas
+  /// rede e timers continuam funcionando normalmente (ver main.dart). Deixar
+  /// isso na tela faria a câmera aparecer só quando o app já estivesse aberto,
+  /// justamente o caso em que o morador menos precisa.
+  Future<void> _resolverCameraDaChamada(String? numeroOrigem) async {
+    cameraDaChamadaUrl = null;
+    cameraDaChamadaNome = null;
+    mostrandoCamera = false;
+
+    final conta = _conta;
+    if (numeroOrigem == null || numeroOrigem.isEmpty || conta == null) return;
+
+    try {
+      _interfones ??= await ApiService(
+        conta.painelUrl,
+      ).fetchInterfonia(conta.ramal, conta.senha);
+
+      for (final i in _interfones!) {
+        if (i.destino == numeroOrigem && i.temCamera) {
+          cameraDaChamadaUrl = i.cameraUrl;
+          cameraDaChamadaNome = i.cameraNome;
+          // Sem vídeo próprio, a câmera é a única imagem possível — já começa
+          // mostrando ela. Com vídeo, começa no vídeo do interfone e o
+          // morador alterna se quiser.
+          mostrandoCamera = !i.suportaVideo;
+          notifyListeners();
+          return;
+        }
+      }
+    } catch (e) {
+      // Melhor esforço: sem a lista, a chamada acontece normalmente, só sem
+      // a imagem da câmera. Não pode atrapalhar o interfone tocar.
+      debugPrint('[Portcall] não consegui resolver a câmera do interfone: $e');
+    }
+  }
+
+  /// Alterna entre o vídeo do próprio interfone e a câmera do condomínio.
+  void alternarFonteDeVideo() {
+    if (cameraDaChamadaUrl == null) return;
+    mostrandoCamera = !mostrandoCamera;
+    notifyListeners();
+  }
+
   Future<void> conectar(SipAccount conta) async {
+    _conta = conta;
     final settings = UaSettings()
       // O endpoint no painel está com webrtc=yes (ICE, BUNDLE áudio+vídeo na
       // mesma porta) — isso é pensado pra sinalização WebSocket, não TCP puro.
@@ -669,6 +756,9 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       _numeroEntrante = null;
       _entranteAtendida = false;
       _entranteRecusada = false;
+      cameraDaChamadaUrl = null;
+      cameraDaChamadaNome = null;
+      mostrandoCamera = false;
 
       activeCall = null;
       localStream = null;

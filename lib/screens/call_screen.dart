@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 import 'package:sip_ua/sip_ua.dart';
 
 import '../models/app_button.dart';
@@ -32,6 +34,14 @@ class CallScreen extends StatefulWidget {
 class _CallScreenState extends State<CallScreen> {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+
+  /// Player da câmera do condomínio acoplada ao interfone. Criado só quando a
+  /// chamada de fato tem câmera — abrir um player por chamada, mesmo sem usar,
+  /// desperdiçaria memória num aparelho que já está com uma sessão WebRTC
+  /// aberta.
+  Player? _cameraPlayer;
+  VideoController? _cameraController;
+  String? _cameraUrlAberta;
   bool _renderersProntos = false;
   final Set<String> _portoesAbrindo = {};
   MediaStream? _remoteStreamAnexado;
@@ -112,6 +122,27 @@ class _CallScreenState extends State<CallScreen> {
       _remoteStreamAnexado = remoto;
       _remoteVideoTracksAnexado = videoTracks;
     }
+
+    _sincronizarCamera();
+  }
+
+  /// Abre (uma única vez) o stream da câmera acoplada ao interfone.
+  ///
+  /// A URL só chega depois que o SipService consulta a lista de interfones —
+  /// isso acontece em paralelo com a chamada tocando, pra não atrasá-la. Por
+  /// isso o player é criado aqui, a cada mudança de estado, e não no
+  /// initState: no momento em que a tela abre a URL ainda pode não existir.
+  void _sincronizarCamera() {
+    final url = widget.sip.cameraDaChamadaUrl;
+    if (url == null || url.isEmpty) return;
+    if (_cameraUrlAberta == url) return;
+
+    _cameraUrlAberta = url;
+    _cameraPlayer?.dispose();
+    final player = Player();
+    _cameraPlayer = player;
+    _cameraController = VideoController(player);
+    player.open(Media(url));
   }
 
   @override
@@ -121,6 +152,9 @@ class _CallScreenState extends State<CallScreen> {
     _pollParticipantes?.cancel();
     _localRenderer.dispose();
     _remoteRenderer.dispose();
+    // Sem isso o libmpv continua puxando o stream RTSP depois da chamada
+    // terminar — consumindo dados móveis do morador em segundo plano.
+    _cameraPlayer?.dispose();
     super.dispose();
   }
 
@@ -250,14 +284,75 @@ class _CallScreenState extends State<CallScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            if (comVideo)
+            // Câmera do condomínio ocupa a tela quando o morador escolheu ela
+            // — ou automaticamente, quando o interfone não tem vídeo próprio e
+            // ela é a única imagem possível (ver SipService.mostrandoCamera).
+            if (widget.sip.mostrandoCamera && _cameraController != null)
+              Positioned.fill(
+                child: Video(
+                  controller: _cameraController!,
+                  controls: NoVideoControls,
+                  fit: BoxFit.cover,
+                ),
+              )
+            else if (comVideo)
               Positioned.fill(
                 child: RTCVideoView(
                   _remoteRenderer,
                   objectFit: RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
                 ),
               ),
-            if (comVideo && widget.sip.localStream != null)
+            // Botão de alternar entre as duas imagens. Só aparece quando
+            // existem AS DUAS — com uma fonte só ele não teria o que alternar
+            // e seria ruído numa tela que precisa ser óbvia em 2 segundos.
+            if (widget.sip.cameraDaChamadaUrl != null && comVideo)
+              Positioned(
+                left: 16,
+                top: 16,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(24),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: widget.sip.alternarFonteDeVideo,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            widget.sip.mostrandoCamera
+                                ? Icons.videocam_rounded
+                                : Icons.photo_camera_outlined,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            widget.sip.mostrandoCamera
+                                ? 'Ver interfone'
+                                : 'Ver câmera',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            // Miniatura da própria câmera do morador: escondida enquanto ele
+            // olha a câmera do condomínio — ali ele quer ver o portão, não o
+            // próprio rosto ocupando canto da tela.
+            if (comVideo &&
+                widget.sip.localStream != null &&
+                !widget.sip.mostrandoCamera)
               Positioned(
                 right: 16,
                 top: 16,
