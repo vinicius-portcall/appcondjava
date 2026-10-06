@@ -10,8 +10,8 @@ const _brandGreen = Color(0xFF00A85A);
 /// sinal de chamada tocando) se espalhando a partir dele — referência visual
 /// são as ondas de som já desenhadas na própria logo. Usa o branding em
 /// cache (ver SessionService.loadBranding) pra aparecer na hora, sem esperar
-/// rede — cai no ícone/nome genérico do Portcall só na primeira abertura do
-/// app, antes de existir qualquer branding salvo.
+/// rede — cai na logo e no nome embutidos no app só na primeira abertura,
+/// antes de existir qualquer branding salvo.
 class SplashScreen extends StatefulWidget {
   final Branding? branding;
 
@@ -72,7 +72,7 @@ class _SplashScreenState extends State<SplashScreen>
                     scale: Tween(begin: 0.7, end: 1.0).animate(logoPop),
                     child: FadeTransition(
                       opacity: logoPop,
-                      child: _logo(branding, colorScheme),
+                      child: _logo(branding),
                     ),
                   ),
                 ],
@@ -89,7 +89,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: Column(
                   children: [
                     Text(
-                      branding?.appNome ?? 'Portcall',
+                      branding?.appNome ?? 'Vídeo Atende',
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(fontWeight: FontWeight.bold),
                     ),
@@ -115,8 +115,8 @@ class _SplashScreenState extends State<SplashScreen>
     );
   }
 
-  Widget _logo(Branding? branding, ColorScheme colorScheme) {
-    if (branding?.logoUrl == null) return _iconePadrao(colorScheme);
+  Widget _logo(Branding? branding) {
+    if (branding?.logoUrl == null) return _iconePadrao();
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -133,23 +133,27 @@ class _SplashScreenState extends State<SplashScreen>
             child: child,
           );
         },
-        errorBuilder: (_, _, _) => _iconePadrao(colorScheme),
+        errorBuilder: (_, _, _) => _iconePadrao(),
       ),
     );
   }
 
-  Widget _iconePadrao(ColorScheme colorScheme) {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(
-        color: colorScheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Icon(
-        Icons.apartment,
-        size: 52,
-        color: colorScheme.onSecondaryContainer,
+  /// A logo do próprio app, de asset local.
+  ///
+  /// Vale pra primeira abertura (antes de existir branding salvo), pro
+  /// condomínio que não cadastrou logo no painel e pro caso de a imagem da
+  /// rede não carregar. Antes era um ícone genérico de prédio — o app abria
+  /// sem a identidade dele em todos esses casos. É a mesma arte que a tela
+  /// nativa de abertura desenha (ver android/.../launch_background.xml), então
+  /// a logo não "troca" no meio da inicialização.
+  Widget _iconePadrao() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      child: Image.asset(
+        'assets/icon/app_icon.png',
+        width: 96,
+        height: 96,
+        fit: BoxFit.cover,
       ),
     );
   }

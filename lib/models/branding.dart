@@ -23,7 +23,7 @@ class Branding {
     this.modulosLiberados,
   });
 
-  factory Branding.fallback() => const Branding(appNome: 'Portcall');
+  factory Branding.fallback() => const Branding(appNome: 'Vídeo Atende');
 
   /// Se a opção deve aparecer na tela inicial.
   ///
@@ -42,7 +42,7 @@ class Branding {
     return Branding(
       appNome: (json['app_nome'] as String?)?.trim().isNotEmpty == true
           ? json['app_nome']
-          : 'Portcall',
+          : 'Vídeo Atende',
       condominioNome: (json['condominio_nome'] as String?)?.trim().isNotEmpty == true
           ? json['condominio_nome']
           : null,

@@ -1,4 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#00A85A</color>
+    <!-- Mesmo fundo do Scaffold no tema claro (lib/theme/app_colors.dart): a
+         tela nativa precisa ser da mesma cor da primeira tela do Flutter,
+         senão a troca pisca. -->
+    <color name="splash_background">#F6EFE0</color>
 </resources>

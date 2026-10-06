@@ -287,8 +287,20 @@ class _CallScreenState extends State<CallScreen> {
             // Câmera do condomínio ocupa a tela quando o morador escolheu ela
             // — ou automaticamente, quando o interfone não tem vídeo próprio e
             // ela é a única imagem possível (ver SipService.mostrandoCamera).
+            // A câmera NÃO ocupa a tela toda, diferente do vídeo do interfone.
+            //
+            // Em tela cheia ela competia com os controles da chamada: o
+            // morador abre a câmera justamente pra ver quem está no portão e
+            // então apertar "abrir" — as duas coisas precisam estar visíveis
+            // ao mesmo tempo. Ocupando a metade de cima, a imagem fica grande
+            // o suficiente pra reconhecer alguém e o botão do portão continua
+            // à mão, sobre fundo escuro.
             if (widget.sip.mostrandoCamera && _cameraController != null)
-              Positioned.fill(
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: MediaQuery.of(context).size.height * 0.52,
                 child: Video(
                   controller: _cameraController!,
                   controls: NoVideoControls,

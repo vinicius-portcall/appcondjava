@@ -1,12 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
-<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@android:color/white" />
+<!-- Tela que o Android desenha enquanto o processo sobe, antes de existir
+     qualquer frame do Flutter. Era branco puro (o template do Flutter), e era
+     esse branco vazio que aparecia na abertura do app em vez da logo.
 
-    <!-- You can insert your own image assets here -->
-    <!-- <item>
-        <bitmap
-            android:gravity="center"
-            android:src="@mipmap/launch_image" />
-    </item> -->
+     A logo é montada aqui em XML, reaproveitando as duas peças que o
+     flutter_launcher_icons já gerou pro ícone adaptativo (o quadrado verde
+     @color/ic_launcher_background e o desenho branco
+     @drawable/ic_launcher_foreground), em vez de um PNG novo — assim ela
+     acompanha sozinha qualquer troca do ícone do app. O tamanho (128dp) e o
+     raio dos cantos seguem o _logo() da SplashScreen do Flutter, que entra
+     logo em seguida: as duas telas mostram a mesma logo, no mesmo lugar,
+     sobre o mesmo fundo. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/splash_background" />
+
+    <item android:gravity="center" android:width="128dp" android:height="128dp">
+        <shape android:shape="rectangle">
+            <corners android:radius="32dp" />
+            <solid android:color="@color/ic_launcher_background" />
+        </shape>
+    </item>
+
+    <item android:gravity="center" android:width="128dp" android:height="128dp">
+        <bitmap android:src="@drawable/ic_launcher_foreground" android:gravity="fill" />
+    </item>
 </layer-list>

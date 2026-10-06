@@ -43,6 +43,26 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// interfones quando uma chamada chega.
   SipAccount? _conta;
 
+  /// Nome que aparece nas notificações de chamada do Android.
+  ///
+  /// Vem do branding do painel (`app_nome`), não de texto fixo: o app é
+  /// white-label e cada condomínio tem o seu — estava chegando "Portcall" na
+  /// notificação de um app que o morador conhece como "MultVirtual Video
+  /// Atende". Lido do cache (SessionService), porque a notificação precisa do
+  /// nome no instante em que a chamada chega, sem tempo pra ir na rede.
+  String _nomeApp = 'Vídeo Atende';
+
+  Future<void> _carregarNomeApp() async {
+    try {
+      final branding = await SessionService().loadBranding();
+      final nome = branding?.appNome.trim();
+      if (nome != null && nome.isNotEmpty) _nomeApp = nome;
+    } catch (_) {
+      // Fica o padrão — nome errado na notificação é menos grave do que
+      // atrapalhar o registro SIP.
+    }
+  }
+
   /// Interfones do condomínio, com a câmera que o painel associou a cada um.
   /// Buscados sob demanda e mantidos em memória: a lista muda raramente e a
   /// chamada não pode esperar rede pra decidir o que mostrar.
@@ -163,7 +183,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       CallKitParams(
         id: _callKitId!,
         nameCaller: nome,
-        appName: 'Portcall',
+        appName: _nomeApp,
         handle: numero ?? nome,
         type: 0,
         duration: 30000,
@@ -198,7 +218,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
         CallKitParams(
           id: _uuid.v4(),
           nameCaller: nome,
-          appName: 'Portcall',
+          appName: _nomeApp,
           handle: _numeroEntrante ?? nome,
           type: 0,
           // Sem este bloco a notificação aparece, mas MUDA: o lado Android lê
@@ -321,6 +341,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
   Future<void> conectar(SipAccount conta) async {
     _conta = conta;
+    unawaited(_carregarNomeApp());
     final settings = UaSettings()
       // O endpoint no painel está com webrtc=yes (ICE, BUNDLE áudio+vídeo na
       // mesma porta) — isso é pensado pra sinalização WebSocket, não TCP puro.

@@ -116,13 +116,17 @@ class PersistentEngineService : Service() {
         }
         val contentIntent = PendingIntent.getActivity(this, 0, launchIntent, piFlags)
 
+        // Nome real do app (label do AndroidManifest), nao texto fixo: o app e
+        // white-label e o morador conhece ele por "Vídeo Atende", nao por
+        // "Portcall" — que e so o nome interno do pacote.
+        val nomeApp = applicationInfo.loadLabel(packageManager).toString()
         val text = if (ramal != null) "Ramal $ramal — online" else "Mantendo o registro ativo"
 
         val notification: Notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
                 .setOngoing(true)
                 .setSmallIcon(applicationInfo.icon)
-                .setContentTitle("Portcall conectado")
+                .setContentTitle("$nomeApp conectado")
                 .setContentText(text)
                 .setContentIntent(contentIntent)
                 .build()
@@ -131,7 +135,7 @@ class PersistentEngineService : Service() {
             Notification.Builder(this)
                 .setOngoing(true)
                 .setSmallIcon(applicationInfo.icon)
-                .setContentTitle("Portcall conectado")
+                .setContentTitle("$nomeApp conectado")
                 .setContentText(text)
                 .setContentIntent(contentIntent)
                 .build()

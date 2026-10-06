@@ -120,7 +120,7 @@ class _PortcallAppState extends State<PortcallApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Portcall',
+      title: 'Vídeo Atende',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),
