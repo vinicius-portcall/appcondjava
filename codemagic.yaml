@@ -20,7 +20,7 @@ workflows:
       events:
         - push
       branch_patterns:
-        - pattern: main
+        - pattern: master
           include: true
     scripts:
       - name: Buscar certificado e perfil de provisionamento
