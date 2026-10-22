@@ -18,9 +18,11 @@ workflows:
         BUNDLE_ID: "br.com.portcall.portcallApp"
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
         XCODE_SCHEME: "Runner"
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: br.com.portcall.portcallApp
+      # Sem bloco "ios_signing" aqui de proposito: ele PROCURA um perfil de
+      # provisionamento ja existente e aborta o build se nao achar — que foi
+      # o que aconteceu na primeira tentativa, com o bundle recem-criado e
+      # ainda sem perfil. Quem cria o perfil e o certificado e o
+      # fetch-signing-files --create nos scripts abaixo.
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -85,9 +87,8 @@ workflows:
         BUNDLE_ID: "br.com.portcall.portcallApp"
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
         XCODE_SCHEME: "Runner"
-      ios_signing:
-        distribution_type: ad_hoc
-        bundle_identifier: br.com.portcall.portcallApp
+      # Mesmo motivo do workflow de TestFlight: quem cria o perfil ad-hoc e o
+      # fetch-signing-files --create la embaixo, nao este bloco.
       flutter: stable
       xcode: latest
       cocoapods: default
