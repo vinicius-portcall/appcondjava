@@ -47,10 +47,28 @@ workflows:
       - name: Instalar dependências Flutter
         script: |
           flutter packages pub get
-      - name: Build iOS (release, assinado)
+      # Duas etapas de propósito, e nesta ordem.
+      #
+      # "flutter build ipa" sozinho não funciona aqui: ele reescreve o
+      # project.pbxproj durante o build (atualiza o deployment target pra
+      # 15.0) e com isso apaga a configuração de assinatura que o
+      # "xcode-project use-profiles" tinha acabado de gravar. O Flutter então
+      # tenta assinar por conta própria, procura um certificado de
+      # DEVELOPMENT — que não existe, o nosso é de distribuição — e o build
+      # morre com "No valid code signing certificates were found".
+      #
+      # Compilando sem assinar primeiro, o pbxproj já está reescrito quando o
+      # xcodebuild entra; aí ele arquiva e exporta usando os perfis
+      # instalados na keychain.
+      - name: Compilar o Flutter sem assinar
         script: |
-          flutter build ipa --release \
-            --export-options-plist=/Users/builder/export_options.plist
+          flutter build ios --release --no-codesign
+      - name: Arquivar e exportar o .ipa assinado
+        script: |
+          xcode-project use-profiles
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
@@ -104,10 +122,16 @@ workflows:
       - name: Instalar dependências Flutter
         script: |
           flutter packages pub get
-      - name: Build iOS (release, ad-hoc)
+      # Mesmo motivo do workflow de TestFlight: ver o comentário longo lá.
+      - name: Compilar o Flutter sem assinar
         script: |
-          flutter build ipa --release \
-            --export-options-plist=/Users/builder/export_options.plist
+          flutter build ios --release --no-codesign
+      - name: Arquivar e exportar o .ipa assinado
+        script: |
+          xcode-project use-profiles
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
