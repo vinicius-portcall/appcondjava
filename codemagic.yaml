@@ -4,12 +4,16 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
-      # Nome da chave cadastrada no Codemagic em Settings > Integrations >
-      # Developer Portal. É ela que o "auth: integration" lá embaixo usa pra
-      # publicar no TestFlight — sem declarar aqui, o Codemagic recusa o
-      # arquivo inteiro com erro de validação.
-      integrations:
-        app_store_connect: Codemagic Video Atende
+      # Grupo de variáveis criado no Codemagic em Environment variables, com
+      # APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY_IDENTIFIER e
+      # APP_STORE_CONNECT_PRIVATE_KEY (o conteúdo do .p8).
+      #
+      # NÃO use "integrations:" aqui: esse campo só existe em conta Team, e
+      # na conta pessoal o Codemagic recusa o arquivo inteiro com
+      # "extra fields not permitted". Na conta pessoal a integração do
+      # Developer Portal serve ao editor visual; o YAML lê das variáveis.
+      groups:
+        - appstore_credentials
       vars:
         BUNDLE_ID: "br.com.portcall.portcallApp"
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
@@ -56,7 +60,11 @@ workflows:
           success: true
           failure: true
       app_store_connect:
-        auth: integration # usa a integração "App Store Connect" configurada no painel do Codemagic
+        # Conta pessoal nao aceita "auth: integration" — as credenciais vem do
+        # grupo appstore_credentials declarado no environment acima.
+        api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+        key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+        issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
         beta_groups:
           - Testadores Vídeo Atende
@@ -66,11 +74,11 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
-      # Mesma chave do workflow de TestFlight: o fetch-signing-files abaixo
-      # fala com a Apple pra criar certificado e perfil, e precisa dela mesmo
-      # sem publicar nada.
-      integrations:
-        app_store_connect: Codemagic Video Atende
+      # Mesmo grupo do workflow de TestFlight: o fetch-signing-files abaixo
+      # fala com a Apple pra criar certificado e perfil, e precisa das
+      # credenciais mesmo sem publicar nada.
+      groups:
+        - appstore_credentials
       vars:
         # Usado pelo fetch-signing-files mais abaixo — sem isso o script
         # roda com a variável vazia e o build falha.
