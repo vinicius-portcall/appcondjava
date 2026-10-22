@@ -4,8 +4,12 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
-      groups:
-        - appstore_credentials # criar esse grupo no Codemagic com as chaves abaixo
+      # Nome da chave cadastrada no Codemagic em Settings > Integrations >
+      # Developer Portal. É ela que o "auth: integration" lá embaixo usa pra
+      # publicar no TestFlight — sem declarar aqui, o Codemagic recusa o
+      # arquivo inteiro com erro de validação.
+      integrations:
+        app_store_connect: Codemagic Video Atende
       vars:
         BUNDLE_ID: "br.com.portcall.portcallApp"
         XCODE_WORKSPACE: "ios/Runner.xcworkspace"
@@ -16,12 +20,15 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: master
-          include: true
+    # Sem gatilho automático de propósito enquanto o app não compila no iOS
+    # pela primeira vez: cada tentativa gasta minutos da cota mensal, e as
+    # primeiras tendem a falhar no CocoaPods. Dispare manualmente no painel.
+    # Para voltar ao automático, reponha:
+    #   triggering:
+    #     events: [push]
+    #     branch_patterns:
+    #       - pattern: master
+    #         include: true
     scripts:
       - name: Buscar certificado e perfil de provisionamento
         script: |
@@ -59,6 +66,11 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
+      # Mesma chave do workflow de TestFlight: o fetch-signing-files abaixo
+      # fala com a Apple pra criar certificado e perfil, e precisa dela mesmo
+      # sem publicar nada.
+      integrations:
+        app_store_connect: Codemagic Video Atende
       vars:
         # Usado pelo fetch-signing-files mais abaixo — sem isso o script
         # roda com a variável vazia e o build falha.
