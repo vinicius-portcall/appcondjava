@@ -675,15 +675,31 @@ class ApiService {
   }
 
   /// Best-effort: quem chama decide se ignora falha (não deve travar login).
+  /// Registra os tokens de push do aparelho no painel.
+  ///
+  /// O iPhone tem DOIS: o do Firebase, para avisos comuns (encomenda, mural),
+  /// e o do PushKit (`voipToken`), que é o único capaz de acordar o app para
+  /// tocar o interfone com a tela apagada. São emitidos por sistemas
+  /// diferentes e viajam por caminhos diferentes — FCM e APNs. No Android o
+  /// `voipToken` vai nulo: lá quem mantém o ramal vivo é o serviço nativo.
   Future<void> registrarPushToken(
     String ramal,
     String senha,
-    String fcmToken,
-  ) async {
+    String fcmToken, {
+    String? voipToken,
+    String plataforma = 'android',
+  }) async {
     final res = await http
         .post(
           _uri('api_push_registrar.php'),
-          body: {'ramal': ramal, 'senha': senha, 'fcm_token': fcmToken},
+          body: {
+            'ramal': ramal,
+            'senha': senha,
+            'fcm_token': fcmToken,
+            'plataforma': plataforma,
+            if (voipToken != null && voipToken.isNotEmpty)
+              'voip_token': voipToken,
+          },
         )
         .timeout(const Duration(seconds: 8));
 

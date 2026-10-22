@@ -35,6 +35,12 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<!-- voip: sem isso o iOS não entrega push do PushKit e o interfone
+		     simplesmente não toca com o app fechado. É o equivalente iOS do
+		     PersistentEngineService do Android, que lá mantém o registro SIP
+		     vivo — aqui o app fica dormindo e só acorda quando o servidor
+		     manda o push VoIP (ver apns_helper.php no painel). -->
+		<string>voip</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
