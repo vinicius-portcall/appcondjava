@@ -309,27 +309,62 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     final conta = _conta;
     if (numeroOrigem == null || numeroOrigem.isEmpty || conta == null) return;
 
+    // Com lista em memória, decide AGORA e revalida depois: a chamada não
+    // pode esperar rede pra saber o que mostrar.
+    //
+    // O `??=` que estava aqui nunca reconsultava o painel. Como o SipService
+    // vive junto com o serviço persistente (ou seja: quase sempre, no
+    // Android), trocar a câmera do interfone no painel não tinha efeito
+    // nenhum até alguém reinstalar o app — o morador via a câmera antiga.
+    if (_interfones != null) {
+      _aplicarCameraDoInterfone(numeroOrigem);
+      unawaited(_recarregarInterfones(conta, numeroOrigem));
+      return;
+    }
+
     try {
-      _interfones ??= await ApiService(
+      _interfones = await ApiService(
         conta.painelUrl,
       ).fetchInterfonia(conta.ramal, conta.senha);
-
-      for (final i in _interfones!) {
-        if (i.destino == numeroOrigem && i.temCamera) {
-          cameraDaChamadaUrl = i.cameraUrl;
-          cameraDaChamadaNome = i.cameraNome;
-          // Sem vídeo próprio, a câmera é a única imagem possível — já começa
-          // mostrando ela. Com vídeo, começa no vídeo do interfone e o
-          // morador alterna se quiser.
-          mostrandoCamera = !i.suportaVideo;
-          notifyListeners();
-          return;
-        }
-      }
+      _aplicarCameraDoInterfone(numeroOrigem);
     } catch (e) {
       // Melhor esforço: sem a lista, a chamada acontece normalmente, só sem
       // a imagem da câmera. Não pode atrapalhar o interfone tocar.
       debugPrint('[Portcall] não consegui resolver a câmera do interfone: $e');
+    }
+  }
+
+  /// Rebusca a lista e, se a câmera daquele interfone mudou, troca a imagem
+  /// durante a própria chamada — a tela escuta o notifyListeners.
+  Future<void> _recarregarInterfones(
+    SipAccount conta,
+    String? numeroOrigem,
+  ) async {
+    try {
+      _interfones = await ApiService(
+        conta.painelUrl,
+      ).fetchInterfonia(conta.ramal, conta.senha);
+      _aplicarCameraDoInterfone(numeroOrigem);
+    } catch (_) {
+      // Fica o que já estava em memória.
+    }
+  }
+
+  void _aplicarCameraDoInterfone(String? numeroOrigem) {
+    for (final i in _interfones ?? const <Interfone>[]) {
+      if (i.destino == numeroOrigem && i.temCamera) {
+        final mudou = cameraDaChamadaUrl != i.cameraUrl;
+        cameraDaChamadaUrl = i.cameraUrl;
+        cameraDaChamadaNome = i.cameraNome;
+        // Sem vídeo próprio, a câmera é a única imagem possível — já começa
+        // mostrando ela. Com vídeo, começa no vídeo do interfone e o
+        // morador alterna se quiser. Só reposiciona na primeira resolução:
+        // numa revalidação no meio da chamada, respeita o que o morador
+        // escolheu no botão.
+        if (mudou) mostrandoCamera = !i.suportaVideo;
+        notifyListeners();
+        return;
+      }
     }
   }
 
