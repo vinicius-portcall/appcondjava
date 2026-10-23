@@ -41,6 +41,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
     private var data: Data?
     private var isFromPushKit: Bool = false
     private var silenceEvents: Bool = false
+    /// Última rota pedida pelo app (true = viva-voz). Precisa ficar guardada
+    /// porque `configureAudioSession()` roda no didActivate do CXProvider —
+    /// ou seja, DEPOIS do app já ter pedido a rota — e reconfigura a
+    /// AVAudioSession do zero, jogando a saída de volta no fone. Sem
+    /// relembrar a escolha aqui, todo pedido de viva-voz era desfeito pelo
+    /// próprio plugin um instante depois.
+    private var rotaVivaVoz: Bool = false
     private let devicePushTokenVoIP = "DevicePushTokenVoIP"
 
     
@@ -232,7 +239,18 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         case "endNativeSubsystemOnly":
             result(true)
             break
+        // Implementação local. No pacote publicado este case é um stub que só
+        // responde `true` — o app pedia viva-voz, recebia "deu certo" e o som
+        // continuava saindo no fone do ouvido. É o mesmo buraco que já
+        // existia no lado Android (ver FlutterCallkitIncomingPlugin.kt).
+        //
+        // Com CallKit no ar quem manda na saída é a AVAudioSession que o
+        // CXProvider ativa, e mexer nela por fora (o setSpeakerphoneOn do
+        // flutter_webrtc) perde a corrida contra o configureAudioSession()
+        // do didActivate. Por isso o pedido sai daqui de dentro.
         case "setAudioRoute":
+            let speaker = (call.arguments as? [String: Any])?["speaker"] as? Bool ?? true
+            self.aplicarRotaDeAudio(vivaVoz: speaker)
             result(true)
             break
         default:
@@ -569,20 +587,57 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
         NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: self, userInfo: userInfo)
     }
     
+    /// Põe a saída de áudio no viva-voz ou de volta no fone do ouvido.
+    ///
+    /// `overrideOutputAudioPort` é o pedido imediato; o `.defaultToSpeaker`
+    /// na categoria é o que faz a escolha sobreviver às reconfigurações que
+    /// o CallKit dispara sozinho durante a chamada (ativar a sessão, sair e
+    /// voltar do background, trocar de fone). Só um dos dois não basta: o
+    /// override sozinho é desfeito na próxima configureAudioSession(), e a
+    /// categoria sozinha não mexe numa sessão que já está tocando.
+    func aplicarRotaDeAudio(vivaVoz: Bool) {
+        self.rotaVivaVoz = vivaVoz
+        let session = AVAudioSession.sharedInstance()
+        do {
+            var opcoes: AVAudioSession.CategoryOptions = [
+                .allowBluetoothA2DP,
+                .duckOthers,
+                .allowBluetooth,
+            ]
+            if vivaVoz {
+                opcoes.insert(.defaultToSpeaker)
+            }
+            try session.setCategory(AVAudioSession.Category.playAndRecord, options: opcoes)
+            try session.overrideOutputAudioPort(vivaVoz ? .speaker : .none)
+        } catch {
+            NSLog("[CallkitIncoming] aplicarRotaDeAudio(\(vivaVoz)) falhou: \(error)")
+        }
+    }
+
     func configureAudioSession(){
         if data?.configureAudioSession != false {
             let session = AVAudioSession.sharedInstance()
             do{
-                try session.setCategory(AVAudioSession.Category.playAndRecord, options: [
+                // `.defaultToSpeaker` entra condicionalmente: sem ele, esta
+                // reconfiguração (chamada no didActivate) apagava o viva-voz
+                // que o app tinha acabado de pedir.
+                var opcoes: AVAudioSession.CategoryOptions = [
                     .allowBluetoothA2DP,
                     .duckOthers,
                     .allowBluetooth,
-                ])
-                
+                ]
+                if self.rotaVivaVoz {
+                    opcoes.insert(.defaultToSpeaker)
+                }
+                try session.setCategory(AVAudioSession.Category.playAndRecord, options: opcoes)
+
                 try session.setMode(self.getAudioSessionMode(data?.audioSessionMode))
                 try session.setActive(data?.audioSessionActive ?? true)
                 try session.setPreferredSampleRate(data?.audioSessionPreferredSampleRate ?? 44100.0)
                 try session.setPreferredIOBufferDuration(data?.audioSessionPreferredIOBufferDuration ?? 0.005)
+                // Depois de setActive: o override vale para a sessão viva, e
+                // pedi-lo antes de ativar não surte efeito nenhum.
+                try session.overrideOutputAudioPort(self.rotaVivaVoz ? .speaker : .none)
             }catch{
                 print(error)
             }
@@ -826,7 +881,13 @@ public class SwiftFlutterCallkitIncomingPlugin: NSObject, FlutterPlugin, CXProvi
             print("Call is on hold")
             return
         }
-        
+
+        // A escolha de rota vale por chamada. Sem zerar, a próxima ligação
+        // começaria no viva-voz só porque a anterior terminou assim — o app
+        // só reconfirma a rota quando a chamada é atendida, e até lá o
+        // didActivate já teria aplicado a preferência velha.
+        self.rotaVivaVoz = false
+
         self.sendEvent(SwiftFlutterCallkitIncomingPlugin.ACTION_CALL_TOGGLE_AUDIO_SESSION, [ "isActive": false ])
     }
     

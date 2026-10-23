@@ -26,6 +26,15 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   StreamSubscription<CallEvent?>? _callKitSub;
   String? _callKitId;
 
+  /// Atendimento pedido antes de existir chamada SIP pra responder — ver
+  /// `atender()`. Só acontece no iPhone, onde o push VoIP faz o telefone
+  /// tocar antes do INVITE chegar.
+  bool _atendimentoPendente = false;
+  bool? _videoDoAtendimentoPendente;
+
+  /// O par do campo acima: recusa feita antes do INVITE existir.
+  bool _recusaPendente = false;
+
   /// Quem está ligando, guardado enquanto a chamada entrante toca — depois
   /// que ela termina o `remote_identity` já não está mais disponível, e é
   /// justamente aí que a notificação de perdida precisa do nome.
@@ -160,8 +169,32 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     }
   }
 
+  /// No iPhone a chamada pode já estar tocando ANTES deste INVITE chegar: o
+  /// push VoIP acorda o app e o `AppDelegate` é obrigado a reportar a
+  /// chamada ao CallKit na hora (o iOS mata quem recebe push VoIP e não
+  /// reporta). Quando o registro SIP termina e o INVITE enfim chega, mostrar
+  /// outra chamada criaria DUAS entradas no CallKit para o mesmo toque — e
+  /// como só uma é encerrada no fim, o iPhone fica preso achando que ainda
+  /// está em ligação.
+  ///
+  /// Devolve o id da chamada que já está na tela, para ser reaproveitado.
+  Future<String?> _chamadaJaReportadaPeloPush() async {
+    if (!Platform.isIOS) return null;
+    try {
+      final ativas = await FlutterCallkitIncoming.activeCalls();
+      for (final c in ativas) {
+        final id = c.id;
+        if (id.isNotEmpty) return id;
+      }
+    } catch (e) {
+      debugPrint('[Portcall] activeCalls() falhou: $e');
+    }
+    return null;
+  }
+
   Future<void> _mostrarChamadaEntrante(Call call) async {
-    _callKitId = _uuid.v4();
+    final idDoPush = await _chamadaJaReportadaPeloPush();
+    _callKitId = idDoPush ?? _uuid.v4();
     final remoteId = call.session.remote_identity;
     final numero = remoteId?.uri?.user;
     final nome = (remoteId?.display_name?.isNotEmpty == true)
@@ -179,6 +212,13 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // aparecer. Quando a resposta chega, o notifyListeners() de dentro faz a
     // tela se atualizar sozinha.
     unawaited(_resolverCameraDaChamada(numero));
+
+    // Já está tocando por causa do push VoIP — só adotamos o id dela acima.
+    // Reportar de novo duplicaria a chamada no CallKit.
+    if (idDoPush != null) {
+      debugPrint('[Portcall] INVITE adotou a chamada do push VoIP ($idDoPush)');
+      return;
+    }
 
     await FlutterCallkitIncoming.showCallkitIncoming(
       CallKitParams(
@@ -555,6 +595,16 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // CallKit — sem isso, uma chamada atendida assim viraria "perdida" ao
     // terminar.
     _entranteAtendida = true;
+
+    // Atendeu antes do INVITE existir (iPhone acordado por push VoIP: o
+    // CallKit toca na hora, o SIP ainda está se registrando). Guarda a
+    // intenção; callStateChanged atende assim que a chamada chegar.
+    if (activeCall == null) {
+      _atendimentoPendente = true;
+      _videoDoAtendimentoPendente = video;
+      debugPrint('[Portcall] atender() antes do INVITE — ficou pendente');
+      return;
+    }
     final comVideo = video ?? ofertaEntranteTemVideo;
     chamadaComVideo = comVideo;
     muted = false;
@@ -627,13 +677,35 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // vira no-op silencioso — ou seja, falha sem lançar, e aí o fallback
     // nunca roda. Era por isso que o viva-voz não saía no iPhone.
     //
-    // No iOS quem manda na rota é a AVAudioSession, e o caminho curto do
-    // flutter_webrtc (setSpeakerphoneOn) fala direto com ela.
+    // No iOS quem manda na rota é a AVAudioSession — e falar com ela por
+    // fora não basta. O CallKit reconfigura a sessão inteira no didActivate
+    // (configureAudioSession no plugin), e essa reconfiguração chega DEPOIS
+    // do pedido do app: o setSpeakerphoneOn do flutter_webrtc acertava a
+    // rota por um instante e o próprio plugin a desfazia em seguida. É a
+    // mesma corrida que o Telecom causa no Android, só que dentro do
+    // pacote. Por isso o pedido também sai de dentro dele, via setAudioRoute
+    // (stub vazio no pacote publicado, implementado no patch local — ver
+    // SwiftFlutterCallkitIncomingPlugin.swift).
+    //
+    // Os dois caminhos são chamados de propósito: o setAudioRoute cobre a
+    // chamada recebida (que passa pelo CallKit) e o setSpeakerphoneOn a
+    // originada daqui, onde não existe sessão do CallKit no ar.
     if (Platform.isIOS) {
       try {
         await Helper.setSpeakerphoneOn(altoFalante);
       } catch (e) {
         debugPrint('[Portcall] setSpeakerphoneOn(iOS) falhou: $e');
+      }
+      try {
+        // O id não é usado pelo lado iOS — a rota é da AVAudioSession, que
+        // é uma só pro processo inteiro. Mandar string vazia quando não há
+        // chamada do CallKit é seguro.
+        await FlutterCallkitIncoming.setAudioRoute(
+          _callKitId ?? '',
+          speaker: altoFalante,
+        );
+      } catch (e) {
+        debugPrint('[Portcall] setAudioRoute(iOS) falhou: $e');
       }
       return;
     }
@@ -694,6 +766,15 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   }
 
   void desligar() {
+    // Mesma corrida de `atender()`, do outro lado: no iPhone dá pra recusar
+    // a chamada do push VoIP antes do INVITE chegar. Sem lembrar da recusa,
+    // o INVITE chegaria depois e o telefone voltaria a tocar sozinho — uma
+    // chamada que o morador já tinha dispensado.
+    if (activeCall == null) {
+      _atendimentoPendente = false;
+      _videoDoAtendimentoPendente = null;
+      _recusaPendente = true;
+    }
     activeCall?.hangup();
     localStream = null;
     remoteStream = null;
@@ -806,6 +887,21 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       unawaited(_mostrarChamadaEntrante(call));
     }
 
+    // O morador já apertou "atender" na tela do CallKit, mas naquele momento
+    // ainda não existia chamada SIP pra responder — acontece no iPhone, onde
+    // quem faz o telefone tocar é o push VoIP e o INVITE só chega depois que
+    // o app acorda e se registra. Sem isto o atendimento caía no vazio
+    // (`activeCall?.answer` num nulo) e a ligação ficava muda dos dois lados.
+    if (entrante && aindaTocando && _recusaPendente) {
+      _recusaPendente = false;
+      activeCall = call;
+      call.hangup();
+    } else if (entrante && aindaTocando && _atendimentoPendente) {
+      _atendimentoPendente = false;
+      activeCall = call;
+      atender(video: _videoDoAtendimentoPendente);
+    }
+
     if (state.state == CallStateEnum.STREAM && state.stream != null) {
       if (state.originator == Originator.local) {
         localStream = state.stream;
@@ -856,6 +952,11 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       _numeroEntrante = null;
       _entranteAtendida = false;
       _entranteRecusada = false;
+      // Uma intenção de atender que sobrasse aqui faria a PRÓXIMA chamada
+      // ser atendida sozinha, sem ninguém tocar em nada.
+      _atendimentoPendente = false;
+      _videoDoAtendimentoPendente = null;
+      _recusaPendente = false;
       cameraDaChamadaUrl = null;
       cameraDaChamadaNome = null;
       mostrandoCamera = false;
