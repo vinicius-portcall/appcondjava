@@ -80,8 +80,16 @@ workflows:
         key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
         issuer_id: $APP_STORE_CONNECT_ISSUER_ID
         submit_to_testflight: true
-        beta_groups:
-          - Testadores Vídeo Atende
+        # Sem "beta_groups" de proposito. "Testadores Video Atende" e um grupo
+        # INTERNO, e a API do App Store Connect recusa associar build a grupo
+        # interno — ele ja recebe todo build automaticamente. Com a lista aqui,
+        # o build inteiro terminava em vermelho ("Cannot add internal group to
+        # a build") DEPOIS de ja ter compilado, assinado e subido o .ipa, o que
+        # faz parecer que o build falhou quando nao falhou.
+        #
+        # Grupo EXTERNO (Testadores Externos) tambem nao entra aqui: ele exige
+        # passar pela Beta App Review, e isso se faz uma vez pela tela do App
+        # Store Connect, nao a cada build.
 
   ios-adhoc-sem-conta-apple:
     name: iOS - build ad-hoc (sem TestFlight)
