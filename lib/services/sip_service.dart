@@ -586,6 +586,23 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // setAudioRoute (patch local do pacote) faz. Se não houver conexão
     // CallKit — chamada originada aqui —, ele devolve false e seguimos
     // pelo caminho normal, que nesse caso funciona.
+    // iOS tem outra história. Tudo abaixo foi escrito contra o Telecom do
+    // Android: o setAudioRoute é patch nosso no lado Kotlin do pacote, o
+    // setAndroidAudioConfiguration nem existe aqui, e o selectAudioOutput
+    // vira no-op silencioso — ou seja, falha sem lançar, e aí o fallback
+    // nunca roda. Era por isso que o viva-voz não saía no iPhone.
+    //
+    // No iOS quem manda na rota é a AVAudioSession, e o caminho curto do
+    // flutter_webrtc (setSpeakerphoneOn) fala direto com ela.
+    if (Platform.isIOS) {
+      try {
+        await Helper.setSpeakerphoneOn(altoFalante);
+      } catch (e) {
+        debugPrint('[Portcall] setSpeakerphoneOn(iOS) falhou: $e');
+      }
+      return;
+    }
+
     final id = _callKitId;
     if (id != null) {
       try {

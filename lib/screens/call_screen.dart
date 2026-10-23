@@ -42,6 +42,8 @@ class _CallScreenState extends State<CallScreen> {
   Player? _cameraPlayer;
   VideoController? _cameraController;
   String? _cameraUrlAberta;
+  StreamSubscription<String>? _erroCameraSub;
+  String? _erroCamera;
   bool _renderersProntos = false;
   final Set<String> _portoesAbrindo = {};
   MediaStream? _remoteStreamAnexado;
@@ -139,10 +141,24 @@ class _CallScreenState extends State<CallScreen> {
 
     _cameraUrlAberta = url;
     _cameraPlayer?.dispose();
-    final player = Player();
-    _cameraPlayer = player;
-    _cameraController = VideoController(player);
-    player.open(Media(url));
+    try {
+      final player = Player();
+      _cameraPlayer = player;
+      _cameraController = VideoController(player);
+      // O player avisa por aqui quando não consegue abrir o stream (DVR fora
+      // do ar, credencial errada, rede bloqueando RTSP). Sem escutar isso, a
+      // falha era invisível: a tela só voltava a mostrar o vídeo do interfone
+      // e parecia que o botão de trocar câmera não funcionava.
+      _erroCameraSub = player.stream.error.listen((e) {
+        debugPrint('[Portcall] câmera da chamada falhou: $e');
+        if (mounted) setState(() => _erroCamera = e);
+      });
+      player.open(Media(url));
+    } catch (e) {
+      debugPrint('[Portcall] não consegui criar o player da câmera: $e');
+      _cameraController = null;
+      if (mounted) setState(() => _erroCamera = '$e');
+    }
   }
 
   @override
@@ -154,6 +170,7 @@ class _CallScreenState extends State<CallScreen> {
     _remoteRenderer.dispose();
     // Sem isso o libmpv continua puxando o stream RTSP depois da chamada
     // terminar — consumindo dados móveis do morador em segundo plano.
+    _erroCameraSub?.cancel();
     _cameraPlayer?.dispose();
     super.dispose();
   }
@@ -305,6 +322,30 @@ class _CallScreenState extends State<CallScreen> {
                   controller: _cameraController!,
                   controls: NoVideoControls,
                   fit: BoxFit.cover,
+                ),
+              )
+            // Sem isto, falha da câmera era indistinguível de botão quebrado:
+            // a tela voltava calada pro vídeo do interfone.
+            else if (widget.sip.mostrandoCamera)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: MediaQuery.of(context).size.height * 0.52,
+                child: ColoredBox(
+                  color: Colors.black87,
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        _erroCamera == null
+                            ? 'Conectando à câmera…'
+                            : 'Câmera indisponível\n$_erroCamera',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                    ),
+                  ),
                 ),
               )
             else if (comVideo)

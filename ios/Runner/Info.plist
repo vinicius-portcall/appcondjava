@@ -32,6 +32,18 @@
 	<string>Necessário para o áudio das chamadas do interfone.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Usado para escolher uma foto no cadastro facial.</string>
+	<!-- As câmeras do condomínio são RTSP, sem TLS, quase sempre num IP da
+	     rede local do prédio (DVR, câmera IP). O App Transport Security
+	     bloqueia tráfego em texto claro por padrão desde o iOS 9, e não há
+	     como pôr certificado válido num DVR dentro do condomínio. Sem esta
+	     exceção o stream não abre — e na tela de chamada isso aparece como
+	     "o botão de trocar câmera não faz nada", porque sem player a tela
+	     cai de volta no vídeo do interfone. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
