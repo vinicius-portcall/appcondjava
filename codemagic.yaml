@@ -36,35 +36,29 @@ workflows:
     #       - pattern: master
     #         include: true
     scripts:
-      - name: Buscar certificado e perfil de provisionamento
+      - name: Instalar dependencias Flutter
+        script: |
+          flutter packages pub get
+      # TUDO numa etapa so, e nesta ordem exata. Duas licoes de builds que
+      # falharam antes:
+      #
+      # 1) Separar em etapas perdia os perfis. O fetch-signing-files baixava
+      #    tudo numa etapa e, na seguinte, o use-profiles nao encontrava nada
+      #    ("Did not find matching provisioning profiles"), caia no metodo
+      #    ad-hoc com certificado e Team Id vazios, e o xcodebuild recusava:
+      #    "Runner requires a provisioning profile".
+      #
+      # 2) O use-profiles tem que vir DEPOIS do flutter build. O
+      #    "flutter build" reescreve o project.pbxproj (atualiza o deployment
+      #    target) e apaga a configuracao de assinatura gravada antes dele.
+      - name: Build iOS assinado e exportacao do .ipa
         script: |
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_STORE \
             --create
           keychain add-certificates
-          xcode-project use-profiles
-      - name: Instalar dependências Flutter
-        script: |
-          flutter packages pub get
-      # Duas etapas de propósito, e nesta ordem.
-      #
-      # "flutter build ipa" sozinho não funciona aqui: ele reescreve o
-      # project.pbxproj durante o build (atualiza o deployment target pra
-      # 15.0) e com isso apaga a configuração de assinatura que o
-      # "xcode-project use-profiles" tinha acabado de gravar. O Flutter então
-      # tenta assinar por conta própria, procura um certificado de
-      # DEVELOPMENT — que não existe, o nosso é de distribuição — e o build
-      # morre com "No valid code signing certificates were found".
-      #
-      # Compilando sem assinar primeiro, o pbxproj já está reescrito quando o
-      # xcodebuild entra; aí ele arquiva e exporta usando os perfis
-      # instalados na keychain.
-      - name: Compilar o Flutter sem assinar
-        script: |
           flutter build ios --release --no-codesign
-      - name: Arquivar e exportar o .ipa assinado
-        script: |
           xcode-project use-profiles
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
@@ -111,23 +105,19 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
-      - name: Buscar certificado e perfil ad-hoc
+      - name: Instalar dependências Flutter
+        script: |
+          flutter packages pub get
+      # Uma etapa só, mesma ordem do workflow de TestFlight — ver o
+      # comentário longo lá para o porquê de cada linha.
+      - name: Build iOS assinado e exportacao do .ipa ad-hoc
         script: |
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" \
             --type IOS_APP_ADHOC \
             --create
           keychain add-certificates
-          xcode-project use-profiles
-      - name: Instalar dependências Flutter
-        script: |
-          flutter packages pub get
-      # Mesmo motivo do workflow de TestFlight: ver o comentário longo lá.
-      - name: Compilar o Flutter sem assinar
-        script: |
           flutter build ios --release --no-codesign
-      - name: Arquivar e exportar o .ipa assinado
-        script: |
           xcode-project use-profiles
           xcode-project build-ipa \
             --workspace "$XCODE_WORKSPACE" \
