@@ -125,7 +125,7 @@ class _CallScreenState extends State<CallScreen> {
       _remoteVideoTracksAnexado = videoTracks;
     }
 
-    _sincronizarCamera();
+    unawaited(_sincronizarCamera());
   }
 
   /// Abre (uma única vez) o stream da câmera acoplada ao interfone.
@@ -134,7 +134,7 @@ class _CallScreenState extends State<CallScreen> {
   /// isso acontece em paralelo com a chamada tocando, pra não atrasá-la. Por
   /// isso o player é criado aqui, a cada mudança de estado, e não no
   /// initState: no momento em que a tela abre a URL ainda pode não existir.
-  void _sincronizarCamera() {
+  Future<void> _sincronizarCamera() async {
     final url = widget.sip.cameraDaChamadaUrl;
     if (url == null || url.isEmpty) return;
     if (_cameraUrlAberta == url) return;
@@ -145,6 +145,14 @@ class _CallScreenState extends State<CallScreen> {
       final player = Player();
       _cameraPlayer = player;
       _cameraController = VideoController(player);
+      // RTSP por TCP, não UDP. O padrão do libmpv tenta UDP primeiro, e no
+      // 4G/5G do morador o NAT da operadora costuma descartar os pacotes de
+      // volta — a imagem simplesmente não vem, sem erro claro. Em TCP o
+      // stream desce pela mesma conexão que já foi aberta e autenticada.
+      final nativo = player.platform;
+      if (nativo is NativePlayer) {
+        await nativo.setProperty('rtsp-transport', 'tcp');
+      }
       // O player avisa por aqui quando não consegue abrir o stream (DVR fora
       // do ar, credencial errada, rede bloqueando RTSP). Sem escutar isso, a
       // falha era invisível: a tela só voltava a mostrar o vídeo do interfone
