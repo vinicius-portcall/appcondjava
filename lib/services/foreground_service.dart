@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -13,6 +15,15 @@ import 'package:permission_handler/permission_handler.dart';
 class ForegroundService {
   static const _channel = MethodChannel('portcall/persistent_service');
 
+  /// Este canal existe SÓ no Android (MainActivity.kt). No iPhone não há
+  /// handler do outro lado, e cada invokeMethod lança MissingPluginException
+  /// — o que já quebrou o botão "Sair": o logout desconectava o ramal e
+  /// morria no stop() antes de limpar a sessão e voltar pra tela de login.
+  ///
+  /// Checar a plataforma aqui, e não com try/catch em cada chamador, mantém
+  /// os erros de verdade visíveis no Android em vez de engolidos.
+  static bool get _disponivel => Platform.isAndroid;
+
   static Future<void> ensureNotificationPermission() async {
     final status = await Permission.notification.status;
     if (!status.isGranted) {
@@ -21,15 +32,18 @@ class ForegroundService {
   }
 
   static Future<void> start({required String ramal}) async {
+    if (!_disponivel) return;
     await ensureNotificationPermission();
     await _channel.invokeMethod('start', {'ramal': ramal});
   }
 
   static Future<void> stop() async {
+    if (!_disponivel) return;
     await _channel.invokeMethod('stop');
   }
 
   static Future<void> requestIgnoreBatteryOptimizations() async {
+    if (!_disponivel) return;
     final ignorando =
         await _channel.invokeMethod<bool>('isIgnoringBatteryOptimizations') ??
         true;
@@ -43,6 +57,7 @@ class ForegroundService {
   /// quem gera o tom é o aparelho — sem isso a ligação fica muda e parece
   /// que não completou. Ver EngineHolder.kt.
   static Future<void> iniciarTomDeChamada() async {
+    if (!_disponivel) return;
     try {
       await _channel.invokeMethod('startRingback');
     } catch (_) {
@@ -51,6 +66,7 @@ class ForegroundService {
   }
 
   static Future<void> pararTomDeChamada() async {
+    if (!_disponivel) return;
     try {
       await _channel.invokeMethod('stopRingback');
     } catch (_) {
@@ -66,6 +82,7 @@ class ForegroundService {
   /// não tem Intent direta pra essa tela específica em todo fabricante, a
   /// tela de detalhes do app é o caminho universal.
   static Future<void> abrirConfiguracoesBateria() async {
+    if (!_disponivel) return;
     await _channel.invokeMethod('openBatterySettings');
   }
 }

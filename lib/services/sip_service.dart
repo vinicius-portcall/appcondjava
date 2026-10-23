@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
@@ -444,11 +445,37 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // customOptions só quando há vídeo: o merge do sip_ua é recursivo, e
     // sobrepor um Map em cima de `video: false` transformaria uma chamada
     // de áudio em vídeo sem querer.
-    return _helper.call(
-      destino,
-      voiceOnly: !video,
-      customOptions: video ? _constraintsVideoLeve : null,
-    );
+    //
+    // E só no Android. O bloco `mandatory` do _constraintsVideoLeve está no
+    // formato legado do Chrome/Android (minWidth/minHeight/minFrameRate como
+    // texto); no iPhone ele faz a câmera nem abrir e a ligação cair logo em
+    // seguida. O que denunciou foi a assimetria: chamada de vídeo RECEBIDA no
+    // iPhone funciona — e é o único caminho que não passa por aqui, porque
+    // quem responde usa o padrão do sip_ua.
+    //
+    // No iOS fica o padrão então. Perde-se o teto de resolução (mais dados
+    // num interfone que não precisa de HD), mas vídeo pesado é melhor que
+    // vídeo nenhum. Para otimizar lá, o caminho é o formato moderno de
+    // constraints (width/height/frameRate), não este.
+    // try/catch porque nenhuma das telas que chamam ligarPara trata exceção:
+    // uma falha ao montar a chamada (câmera negada, constraint que o aparelho
+    // recusa) sumia sem deixar rastro, e pro morador a ligação simplesmente
+    // "não completava". Guardar em lastError deixa o motivo visível — é o
+    // mesmo campo que a home já lê pra mostrar falha de registro.
+    try {
+      return await _helper.call(
+        destino,
+        voiceOnly: !video,
+        customOptions: video && Platform.isAndroid
+            ? _constraintsVideoLeve
+            : null,
+      );
+    } catch (e) {
+      lastError = 'Não foi possível iniciar a chamada: $e';
+      debugPrint('[Portcall] ligarPara($destino, video: $video) falhou: $e');
+      notifyListeners();
+      return false;
+    }
   }
 
   /// Muta/desmuta o microfone desativando a faixa de áudio local — o outro
