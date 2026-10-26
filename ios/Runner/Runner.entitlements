@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Sem esta chave o iOS NÃO emite token de push — nem o do APNs comum,
+	     nem o do PushKit. O PKPushRegistry é criado normalmente e o callback
+	     didUpdate simplesmente nunca dispara, sem erro nenhum. Foi o que
+	     manteve o interfone mudo com a tela apagada mesmo depois do PushKit
+	     estar implementado: o app não tinha token para mandar ao painel, e o
+	     ramal nem aparecia na tabela dispositivos_push.
+
+	     "production" é o valor para builds distribuídos (TestFlight e App
+	     Store), que é como este app é compilado — o Codemagic assina com
+	     perfil de distribuição. Com "development" aqui, o token sairia do
+	     ambiente de sandbox e o painel, que fala com api.push.apple.com,
+	     não conseguiria entregar nada. -->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>
