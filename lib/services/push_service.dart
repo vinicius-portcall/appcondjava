@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
@@ -49,8 +50,24 @@ class PushService {
         await _registrarToken(token);
       }
       messaging.onTokenRefresh.listen(_registrarToken);
-    } catch (_) {
-      // Sem push o app continua funcionando normalmente — não deve travar o login.
+    } catch (e) {
+      // Sem push o app continua funcionando normalmente — não deve travar o
+      // login. Mas o erro É registrado: engolir calado aqui foi o que deixou
+      // o iPhone invisível. Quando o Firebase falha no iOS (acontece se o
+      // APNs ainda não entregou o token ao SDK) e o PushKit também não tinha
+      // devolvido nada, NENHUM registro era enviado — e o ramal não aparecia
+      // na tabela dispositivos_push, sem qualquer pista do motivo.
+      debugPrint('[Portcall] Firebase push falhou: $e');
+    }
+
+    // Registra a presença de qualquer forma, mesmo sem token nenhum. Sem
+    // isto não há como distinguir, do lado do painel, um app que nunca rodou
+    // de um app que rodou e não conseguiu token do sistema — e no iPhone,
+    // onde os tokens chegam por callback e podem não chegar, essa diferença
+    // é tudo o que se tem para diagnosticar. O painel aceita o registro sem
+    // token quando a plataforma é iOS (ver api_push_registrar.php).
+    if (Platform.isIOS && _voipToken == null && _fcmToken == null) {
+      await _registrarToken('');
     }
 
     if (aoReceberEmPrimeiroPlano != null) {
@@ -81,6 +98,29 @@ class PushService {
         unawaited(_atualizarTokenVoIP());
       }
     });
+
+    // O evento acima cobre o caso de o token chegar DEPOIS deste listener
+    // existir. Mas ele pode chegar antes — o PKPushRegistry é registrado no
+    // didFinishLaunching, e o Flutter leva um tempo até montar a tela que
+    // cria o PushService. Nessa janela o evento é emitido sem ninguém
+    // escutando, e a leitura única lá em cima já tinha voltado vazia: o
+    // token existia no aparelho e nunca era mandado ao painel.
+    //
+    // Reler algumas vezes resolve: o valor fica guardado no UserDefaults do
+    // lado nativo, então basta perguntar de novo. Cinco tentativas em ~15s
+    // cobrem a emissão do token, que depende de rede.
+    if (_voipToken == null || _voipToken!.isEmpty) {
+      unawaited(_insistirPeloTokenVoIP());
+    }
+  }
+
+  Future<void> _insistirPeloTokenVoIP() async {
+    for (var tentativa = 1; tentativa <= 5; tentativa++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (_voipToken != null && _voipToken!.isNotEmpty) return;
+      await _atualizarTokenVoIP();
+    }
+    debugPrint('[Portcall] iOS não devolveu token VoIP após 5 tentativas');
   }
 
   Future<void> _atualizarTokenVoIP() async {
