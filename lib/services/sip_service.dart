@@ -238,6 +238,31 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
           textAccept: 'Atender',
           textDecline: 'Recusar',
         ),
+        ios: const IOSParams(
+          iconName: 'AppIcon',
+          handleType: 'generic',
+          supportsVideo: true,
+          supportsDTMF: true,
+          supportsHolding: false,
+          supportsGrouping: false,
+          supportsUngrouping: false,
+          // Sem isto a chamada entra no histórico do app Telefone, e tocar no
+          // número lá tentaria discá-lo pela operadora — o "número" aqui é um
+          // ramal do condomínio, que não existe fora do PBX.
+          includesCallsInRecents: false,
+          // ESTA é a linha do viva-voz. Com `true` (o padrão), o plugin
+          // reconfigura a AVAudioSession inteira por conta própria quando o
+          // CallKit ativa a sessão — por fora do RTCAudioSession, que é quem
+          // o WebRTC usa e o único caminho que respeita o lock dele.
+          // Resultado: o flutter_webrtc colocava o som no viva-voz e um
+          // instante depois o plugin devolvia pro fone do ouvido.
+          //
+          // Num app WebRTC quem deve mandar na sessão de áudio é o WebRTC.
+          // Desligando isto, o `Helper.setSpeakerphoneOn` passa a ser a
+          // palavra final — e é ele que o `_aplicarSaidaDeAudio` chama.
+          configureAudioSession: false,
+          audioSessionMode: 'voiceChat',
+        ),
       ),
     );
   }
@@ -677,35 +702,29 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // vira no-op silencioso — ou seja, falha sem lançar, e aí o fallback
     // nunca roda. Era por isso que o viva-voz não saía no iPhone.
     //
-    // No iOS quem manda na rota é a AVAudioSession — e falar com ela por
-    // fora não basta. O CallKit reconfigura a sessão inteira no didActivate
-    // (configureAudioSession no plugin), e essa reconfiguração chega DEPOIS
-    // do pedido do app: o setSpeakerphoneOn do flutter_webrtc acertava a
-    // rota por um instante e o próprio plugin a desfazia em seguida. É a
-    // mesma corrida que o Telecom causa no Android, só que dentro do
-    // pacote. Por isso o pedido também sai de dentro dele, via setAudioRoute
-    // (stub vazio no pacote publicado, implementado no patch local — ver
-    // SwiftFlutterCallkitIncomingPlugin.swift).
+    // No iOS o caminho é um só, e tem que ser um só: o `setSpeakerphoneOn`
+    // do flutter_webrtc, que fala com a AVAudioSession através do
+    // RTCAudioSession — com `lockForConfiguration`, como o WebRTC exige.
     //
-    // Os dois caminhos são chamados de propósito: o setAudioRoute cobre a
-    // chamada recebida (que passa pelo CallKit) e o setSpeakerphoneOn a
-    // originada daqui, onde não existe sessão do CallKit no ar.
+    // Mexer na AVAudioSession por fora desse lock não adianta: o WebRTC
+    // observa mudanças de rota e reaplica a configuração dele por cima. Foi
+    // justamente o que fazia o viva-voz não sair aqui — não por falta de
+    // pedido, mas porque o plugin do CallKit reconfigurava a sessão sozinho
+    // quando o CallKit a ativava. Isso agora está desligado na própria
+    // chamada (`configureAudioSession: false` no IOSParams), deixando o
+    // WebRTC como dono da sessão.
+    //
+    // Nada de setAudioRoute aqui, então: no iOS ele seria um segundo dono
+    // da mesma sessão, exatamente o problema que acabamos de tirar.
     if (Platform.isIOS) {
       try {
-        await Helper.setSpeakerphoneOn(altoFalante);
+        if (altoFalante) {
+          await Helper.setSpeakerphoneOnButPreferBluetooth();
+        } else {
+          await Helper.setSpeakerphoneOn(false);
+        }
       } catch (e) {
-        debugPrint('[Portcall] setSpeakerphoneOn(iOS) falhou: $e');
-      }
-      try {
-        // O id não é usado pelo lado iOS — a rota é da AVAudioSession, que
-        // é uma só pro processo inteiro. Mandar string vazia quando não há
-        // chamada do CallKit é seguro.
-        await FlutterCallkitIncoming.setAudioRoute(
-          _callKitId ?? '',
-          speaker: altoFalante,
-        );
-      } catch (e) {
-        debugPrint('[Portcall] setAudioRoute(iOS) falhou: $e');
+        debugPrint('[Portcall] rota de áudio (iOS) falhou: $e');
       }
       return;
     }

@@ -130,6 +130,13 @@ import flutter_callkit_incoming
       // Sem isso a chamada entraria no histórico do app Telefone do iPhone,
       // onde tocar no número tentaria discá-lo pela operadora.
       "includesCallsInRecents": false,
+      // Quem manda na sessão de áudio num app WebRTC é o WebRTC. Com `true`
+      // (o padrão), o plugin reconfigura a AVAudioSession por fora do
+      // RTCAudioSession assim que o CallKit a ativa, e desfaz o viva-voz que
+      // o app tinha acabado de pedir. Mesmo valor usado no IOSParams do
+      // SipService — os dois caminhos precisam concordar, ou a chamada
+      // vinda de push se comportaria diferente da vinda de INVITE.
+      "configureAudioSession": false,
       "audioSessionMode": "voiceChat",
     ]
 
