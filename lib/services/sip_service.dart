@@ -1006,6 +1006,39 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   @override
   void onNewNotify(Notify ntf) {}
 
+  /// Responde ao re-INVITE. Deixar este método vazio — como estava — não é
+  /// "ignorar uma renegociação sem importância": é deixar o servidor
+  /// esperando uma resposta que nunca chega.
+  ///
+  /// O sip_ua só processa o SDP e entrega o evento; quem responde é o app,
+  /// chamando `accept` (ou `reject`). Sem isso o Asterisk recebia o nosso
+  /// "100 Trying" e mais nada, e a transação INVITE ficava pendente no
+  /// diálogo para sempre.
+  ///
+  /// O estrago aparecia longe daqui: pelo RFC 3261 não se manda BYE com uma
+  /// transação INVITE pendente, então quando o visitante desligava no
+  /// interfone o Asterisk NÃO conseguia avisar o app. A ligação continuava
+  /// aberta no celular — microfone, câmera, dados e bateria — até o Timer B
+  /// do SIP estourar, 32 segundos depois. Confirmado no log do servidor: o
+  /// re-INVITE sai às 12:20:48, recebe o 100 Trying, e a resposta final
+  /// nunca vem.
+  ///
+  /// Só acontecia em chamada de VÍDEO porque é só nela que o Asterisk
+  /// renegocia a topologia ao atender (áudio puro não gera re-INVITE) — foi
+  /// o que fez o problema parecer, por um tempo, coisa de iPhone.
   @override
-  void onNewReinvite(ReInvite event) {}
+  void onNewReinvite(ReInvite event) {
+    final aceitar = event.accept;
+    if (aceitar == null) return;
+    debugPrint(
+      '[Portcall] re-INVITE recebido (áudio: ${event.hasAudio}, '
+      'vídeo: ${event.hasVideo}) — respondendo',
+    );
+    unawaited(
+      aceitar(<String, dynamic>{}).catchError((Object e) {
+        debugPrint('[Portcall] falha ao responder re-INVITE: $e');
+        return false;
+      }),
+    );
+  }
 }
