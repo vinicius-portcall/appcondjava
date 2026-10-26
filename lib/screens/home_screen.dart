@@ -277,6 +277,19 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _iniciar() async {
     debugPrint('[Portcall] _iniciar: começando (ramal ${widget.conta.ramal})');
 
+    // Push ANTES do SIP, e sem esperar. Registrar o token não tem relação
+    // nenhuma com registrar o ramal — e deixar um atrás do outro já custou
+    // caro: se `conectar()` demora ou não retorna, nada abaixo dele roda, e
+    // o token nunca chega ao painel. No iPhone isso é pior que no Android,
+    // porque lá o token É o que faz o interfone tocar: sem ele o morador
+    // simplesmente não recebe chamada com a tela apagada.
+    //
+    // O `if (!mounted) return` que havia no meio também derrubava o push
+    // silenciosamente se a tela saísse de cena durante a conexão.
+    unawaited(
+      _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
+    );
+
     if (!_sip.isRegistered) {
       try {
         debugPrint('[Portcall] _iniciar: chamando conectar()');
@@ -289,9 +302,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted) return;
     unawaited(_pedirPermissoesDeMidia());
-    unawaited(
-      _push.iniciar(aoReceberEmPrimeiroPlano: _mostrarNotificacaoPrimeiroPlano),
-    );
     unawaited(_recarregarDados());
     unawaited(_garantirServicoEmSegundoPlano());
   }

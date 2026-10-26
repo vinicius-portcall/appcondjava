@@ -8,6 +8,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:sip_ua/sip_ua.dart';
 import 'package:uuid/uuid.dart';
 
+import '../versao_app.dart';
 import '../models/interfone.dart';
 import 'api_service.dart';
 import 'foreground_service.dart';
@@ -461,7 +462,13 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       ..displayName = conta.displayName.isNotEmpty
           ? conta.displayName
           : conta.ramal
-      ..userAgent = 'PortcallApp'
+      // A versão vai no User-Agent de propósito: ela aparece em todo
+      // REGISTER e INVITE no log do Asterisk, e é a única forma de saber,
+      // do servidor, qual build o aparelho está rodando. Já perdemos tempo
+      // depurando um sintoma sem saber se o celular tinha mesmo a versão
+      // nova instalada — o TestFlight demora horas para contabilizar
+      // instalações e não serve para confirmar isso na hora.
+      ..userAgent = 'PortcallApp/$versaoApp'
       ..dtmfMode = DtmfMode.RFC2833
       ..register = true
       // Curto de propósito: o transporte TCP do sip_ua não manda nenhum

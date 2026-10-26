@@ -6,6 +6,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_callkit_incoming/entities/entities.dart';
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 
+import '../versao_app.dart';
 import 'api_service.dart';
 import 'session_service.dart';
 
@@ -38,7 +39,7 @@ class PushService {
     // a chamada de interfone acorda o app com a tela apagada. Buscado antes
     // do Firebase porque é o único indispensável — se o morador recusar as
     // notificações comuns, o interfone ainda precisa tocar.
-    unawaited(_diag('push_iniciar'));
+    unawaited(_diag('push_iniciar', detalhe: 'app $versaoApp'));
 
     if (Platform.isIOS) {
       await _carregarTokenVoIP();
