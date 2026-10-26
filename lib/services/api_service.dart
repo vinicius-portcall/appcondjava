@@ -709,6 +709,40 @@ class ApiService {
     }
   }
 
+  /// Manda uma linha para o diário de bordo do app no painel
+  /// (`api_diag.php`, tabela `app_diag`).
+  ///
+  /// Existe porque diagnosticar o iPhone de longe era impossível: sem Mac
+  /// não há console do aparelho, e cada hipótese custava um build de ~25
+  /// minutos. O que se via daqui era só a AUSÊNCIA de uma linha numa tabela,
+  /// o que não distingue "o app nem rodou" de "rodou e o sistema recusou".
+  ///
+  /// NUNCA lança: diagnóstico que quebra o app que está diagnosticando não
+  /// serve para nada. Falhou, perdeu-se a linha e a vida continua.
+  Future<void> registrarDiagnostico(
+    String ramal,
+    String senha,
+    String evento, {
+    String detalhe = '',
+  }) async {
+    try {
+      await http
+          .post(
+            _uri('api_diag.php'),
+            body: {
+              'ramal': ramal,
+              'senha': senha,
+              'evento': evento,
+              'detalhe': detalhe,
+              'plataforma': Platform.isIOS ? 'ios' : 'android',
+            },
+          )
+          .timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // best-effort de propósito — ver doc acima.
+    }
+  }
+
   Future<List<MoradorFacial>> fetchMoradoresFacial(
     String ramal,
     String senha,

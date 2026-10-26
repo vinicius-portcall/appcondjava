@@ -38,6 +38,8 @@ class PushService {
     // a chamada de interfone acorda o app com a tela apagada. Buscado antes
     // do Firebase porque é o único indispensável — se o morador recusar as
     // notificações comuns, o interfone ainda precisa tocar.
+    unawaited(_diag('push_iniciar'));
+
     if (Platform.isIOS) {
       await _carregarTokenVoIP();
     }
@@ -46,11 +48,18 @@ class PushService {
       await messaging.requestPermission();
 
       final token = await messaging.getToken();
+      unawaited(
+        _diag(
+          'fcm_token',
+          detalhe: token == null ? 'nulo' : '${token.length} caracteres',
+        ),
+      );
       if (token != null) {
         await _registrarToken(token);
       }
       messaging.onTokenRefresh.listen(_registrarToken);
     } catch (e) {
+      unawaited(_diag('fcm_erro', detalhe: e.toString()));
       // Sem push o app continua funcionando normalmente — não deve travar o
       // login. Mas o erro É registrado: engolir calado aqui foi o que deixou
       // o iPhone invisível. Quando o Firebase falha no iOS (acontece se o
@@ -66,7 +75,15 @@ class PushService {
     // onde os tokens chegam por callback e podem não chegar, essa diferença
     // é tudo o que se tem para diagnosticar. O painel aceita o registro sem
     // token quando a plataforma é iOS (ver api_push_registrar.php).
-    if (Platform.isIOS && _voipToken == null && _fcmToken == null) {
+    //
+    // Sem condição nenhuma de propósito. A versão anterior checava
+    // `_voipToken == null`, que nunca é verdade: o lado nativo devolve
+    // string VAZIA quando não há token (`?? ""` em getDevicePushTokenVoIP),
+    // não nulo. O registro de diagnóstico simplesmente nunca rodava, e o
+    // ramal continuou invisível — escondendo justamente o que ele existia
+    // para revelar. Registrar sempre também não custa nada: quando já há
+    // token, manda o token; o painel usa COALESCE e não apaga o que tem.
+    if (Platform.isIOS) {
       await _registrarToken('');
     }
 
@@ -86,11 +103,20 @@ class PushService {
   Future<void> _carregarTokenVoIP() async {
     try {
       _voipToken = await FlutterCallkitIncoming.getDevicePushTokenVoIP();
+      unawaited(
+        _diag(
+          'voip_token_1a_leitura',
+          detalhe: (_voipToken == null || _voipToken!.isEmpty)
+              ? 'vazio'
+              : '${_voipToken!.length} caracteres',
+        ),
+      );
       if (_voipToken != null && _voipToken!.isNotEmpty) {
         await _registrarToken(_fcmToken ?? '');
       }
-    } catch (_) {
+    } catch (e) {
       // Sem token VoIP o app ainda funciona em primeiro plano.
+      unawaited(_diag('voip_token_erro', detalhe: e.toString()));
     }
 
     _inscricaoVoIP = FlutterCallkitIncoming.onEvent.listen((evento) {
@@ -117,11 +143,25 @@ class PushService {
   Future<void> _insistirPeloTokenVoIP() async {
     for (var tentativa = 1; tentativa <= 5; tentativa++) {
       await Future<void>.delayed(const Duration(seconds: 3));
-      if (_voipToken != null && _voipToken!.isNotEmpty) return;
+      if (_voipToken != null && _voipToken!.isNotEmpty) {
+        unawaited(_diag('voip_token_chegou', detalhe: 'tentativa $tentativa'));
+        return;
+      }
       await _atualizarTokenVoIP();
     }
     debugPrint('[Portcall] iOS não devolveu token VoIP após 5 tentativas');
+    unawaited(_diag('voip_token_desistiu', detalhe: '5 tentativas em 15s'));
   }
+
+  /// Linha no diário de bordo do painel. Sempre `unawaited` nos chamadores:
+  /// diagnóstico não pode atrasar nem derrubar o que está diagnosticando.
+  Future<void> _diag(String evento, {String detalhe = ''}) =>
+      api.registrarDiagnostico(
+        conta.ramal,
+        conta.senha,
+        evento,
+        detalhe: detalhe,
+      );
 
   Future<void> _atualizarTokenVoIP() async {
     try {
