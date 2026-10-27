@@ -33,19 +33,34 @@ class PushService {
   Future<void> iniciar({
     void Function(RemoteMessage mensagem)? aoReceberEmPrimeiroPlano,
   }) async {
-    final messaging = FirebaseMessaging.instance;
+    unawaited(_diag('push_iniciar', detalhe: 'app $versaoApp'));
 
     // No iPhone o token do PushKit é o que importa de verdade: é por ele que
     // a chamada de interfone acorda o app com a tela apagada. Buscado antes
     // do Firebase porque é o único indispensável — se o morador recusar as
     // notificações comuns, o interfone ainda precisa tocar.
-    unawaited(_diag('push_iniciar', detalhe: 'app $versaoApp'));
-
     if (Platform.isIOS) {
       await _carregarTokenVoIP();
     }
 
+    // TODO o bloco do Firebase vive dentro deste try, inclusive o
+    // `FirebaseMessaging.instance`.
+    //
+    // Essa linha era a PRIMEIRA do método, fora de qualquer proteção. No
+    // iPhone o projeto não tem GoogleService-Info.plist, então
+    // `Firebase.initializeApp()` falha lá no main.dart (que trata e segue),
+    // e qualquer acesso a `FirebaseMessaging.instance` depois disso lança.
+    // Como era a primeira instrução, o método inteiro morria antes de tudo:
+    // antes do diagnóstico, antes de ler o token do PushKit, antes de
+    // registrar qualquer coisa. Nenhuma linha chegava ao painel, em nenhum
+    // build — e o sintoma aparecia como "o interfone não toca com a tela
+    // apagada", num recurso que sequer usa Firebase.
+    //
+    // FCM e PushKit são sistemas independentes: um serve para avisos
+    // comuns (mural, encomenda), o outro para a chamada. O caminho da
+    // chamada não pode depender do outro estar configurado.
     try {
+      final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission();
 
       final token = await messaging.getToken();
@@ -88,10 +103,18 @@ class PushService {
       await _registrarToken('');
     }
 
+    // Também protegido: `FirebaseMessaging.onMessage` lança pelo mesmo
+    // motivo quando o Firebase não subiu, e isto roda DEPOIS do registro do
+    // token — deixar desprotegido aqui não derrubaria o push, mas jogaria
+    // uma exceção não tratada no meio da inicialização da tela.
     if (aoReceberEmPrimeiroPlano != null) {
-      _inscricaoPrimeiroPlano = FirebaseMessaging.onMessage.listen(
-        aoReceberEmPrimeiroPlano,
-      );
+      try {
+        _inscricaoPrimeiroPlano = FirebaseMessaging.onMessage.listen(
+          aoReceberEmPrimeiroPlano,
+        );
+      } catch (e) {
+        debugPrint('[Portcall] onMessage indisponível: $e');
+      }
     }
   }
 

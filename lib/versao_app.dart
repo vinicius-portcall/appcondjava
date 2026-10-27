@@ -9,4 +9,4 @@
 /// não servem para confirmar isso na hora do teste.
 ///
 /// Mantenha igual ao `version:` do pubspec.yaml ao subir uma versão.
-const String versaoApp = '1.2.1+23';
+const String versaoApp = '1.2.2+24';
