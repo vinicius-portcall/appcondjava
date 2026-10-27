@@ -415,7 +415,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _sair() async {
     await _sip.desconectar();
-    await ForegroundService.stop();
+    try {
+      await ForegroundService.stop();
+    } catch (_) {
+      // O canal portcall/persistent_service só existe no Android. No iOS o
+      // MissingPluginException interrompia _sair() antes de limpar a sessão
+      // e navegar pro login — o botão "Sair" não fazia nada.
+    }
     await SessionService().clear();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(

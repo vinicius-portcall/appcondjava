@@ -441,7 +441,42 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     notifyListeners();
   }
 
+  /// Guarda a conexão em andamento. Sem isso, duas chamadas concorrentes de
+  /// conectar() abriam dois WebSockets para o mesmo ramal: main() conecta no
+  /// arranque e HomeScreen._iniciar() chamava de novo, porque a guarda
+  /// `if (!isRegistered)` lá ainda via false — o registro do main() estava em
+  /// trânsito. O servidor aceitava o segundo REGISTER, o primeiro socket
+  /// fechava, e o UNREGISTERED desse fechamento era o último estado que a
+  /// tela recebia: ramal registrado no Asterisk, mas "Desconectado" no visor.
+  Future<void>? _conexaoEmAndamento;
+  bool _helperIniciado = false;
+
   Future<void> conectar(SipAccount conta) async {
+    final emAndamento = _conexaoEmAndamento;
+    if (emAndamento != null) return emAndamento;
+    // Já iniciado para esta conta: não reinicia. conectar() devolve antes do
+    // registro concluir (start() só dispara o transporte), então a guarda
+    // `if (!isRegistered)` de quem chama ainda vê false e chamaria de novo —
+    // e um segundo start() no sip_ua derruba a UA atual pra criar outra
+    // ("UA instance already exist!, stopping UA"), gerando a oscilação
+    // REGISTERED -> DISCONNECTED -> UNREGISTERED.
+    final atual = _conta;
+    if (_helperIniciado &&
+        atual != null &&
+        atual.ramal == conta.ramal &&
+        atual.servidor == conta.servidor) {
+      return;
+    }
+    final futuro = _conectar(conta);
+    _conexaoEmAndamento = futuro;
+    try {
+      await futuro;
+    } finally {
+      _conexaoEmAndamento = null;
+    }
+  }
+
+  Future<void> _conectar(SipAccount conta) async {
     _conta = conta;
     unawaited(_carregarNomeApp());
     final settings = UaSettings()
@@ -479,6 +514,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
     debugPrint('[Portcall] SipService.conectar: iniciando helper (${conta.ramal}@${conta.servidor})');
     await _helper.start(settings);
+    _helperIniciado = true;
     debugPrint('[Portcall] SipService.conectar: helper.start() retornou');
   }
 
@@ -837,6 +873,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       }
     }
     _helper.stop();
+    _helperIniciado = false;
   }
 
   @override
