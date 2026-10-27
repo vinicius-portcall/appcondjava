@@ -64,13 +64,17 @@ import flutter_callkit_incoming
     // O APNs espera o token em hexadecimal. O painel guarda exatamente esta
     // string na coluna voip_token e a usa como `apns-device-token`.
     let token = pushCredentials.token.map { String(format: "%02x", $0) }.joined()
-    NSLog("[Portcall] token VoIP recebido (\(token.count) caracteres)")
+    // print, e não NSLog: NSLog vai para o log unificado do iOS e só aparece
+    // no Console.app ou no idevicesyslog. No terminal do `flutter run` — que
+    // é o caminho mais rápido para depurar isto num Mac — ele não aparece,
+    // e foi exatamente esta linha que alguém procurou lá sem encontrar.
+    print("[Portcall] token VoIP recebido (\(token.count) caracteres)")
     SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP(token)
   }
 
   func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
     guard type == .voIP else { return }
-    NSLog("[Portcall] token VoIP invalidado pelo sistema")
+    print("[Portcall] token VoIP invalidado pelo sistema")
     SwiftFlutterCallkitIncomingPlugin.sharedInstance?.setDevicePushTokenVoIP("")
   }
 
@@ -86,7 +90,7 @@ import flutter_callkit_incoming
     }
 
     let dados = payload.dictionaryPayload
-    NSLog("[Portcall] push VoIP recebido: \(dados)")
+    print("[Portcall] push VoIP recebido: \(dados)")
 
     // O `id` vem do servidor e é o MESMO identificador que o app usa quando
     // o INVITE do SIP chega logo depois — sem ele, o CallKit ficaria com
@@ -171,7 +175,7 @@ import flutter_callkit_incoming
     }
 
     if tentativa >= 20 {
-      NSLog("[Portcall] push VoIP: plugin do CallKit não subiu a tempo")
+      print("[Portcall] push VoIP: plugin do CallKit não subiu a tempo")
       completion()
       return
     }
