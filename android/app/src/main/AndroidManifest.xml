@@ -9,6 +9,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL"/>
+    <!-- Par da declaração `specialUse` no PersistentEngineService: sem esta
+         permissão o start com esse tipo é recusado. Ver o comentário no
+         <service> sobre a restrição do Android 15 no BOOT_COMPLETED. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
@@ -41,10 +45,39 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Só `specialUse`, e NÃO `phoneCall`.
+
+             O Android 15+ proíbe iniciar um foreground service do tipo
+             `phoneCall` a partir de um receptor de BOOT_COMPLETED — que é
+             exatamente o que o RestartReceiver faz para trazer o ramal de
+             volta depois que o morador reinicia o celular.
+
+             Declarar os dois tipos (`phoneCall|specialUse`) e escolher
+             `specialUse` no startForeground NÃO resolve: o sistema valida
+             contra o que está declarado aqui, não contra o tipo usado na
+             chamada. Medido num Galaxy S23+ com Android 16 — o log mostra o
+             tipo pedido como specialUse (1073741824) e, 146ms depois:
+
+               ForegroundServiceStartNotAllowedException
+               "FGS type phoneCall not allowed to start from BOOT_COMPLETED!"
+
+             O Service crashava, o Android entrava em recuo exponencial
+             (restartDelay chegou a 25 minutos) e o ramal ficava fora do ar.
+
+             Perder `phoneCall` aqui não desprotege a chamada: durante a
+             conversa quem assume é o ConnectionService self-managed do
+             flutter_callkit_incoming, que o Telecom trata como cliente
+             privilegiado — é justamente por isso que o patch do
+             setAudioRoute precisou existir. Este Service só segura o engine
+             e o registro SIP vivos, que é o que `specialUse` descreve. -->
         <service
             android:name=".PersistentEngineService"
-            android:foregroundServiceType="phoneCall"
-            android:exported="false" />
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Mantem o registro SIP do interfone do condominio ativo apos o aparelho reiniciar, para que o morador receba a chamada da portaria. Usado somente no arranque do sistema; durante a chamada o servico passa para o tipo phoneCall." />
+        </service>
         <receiver
             android:name=".RestartReceiver"
             android:exported="false">

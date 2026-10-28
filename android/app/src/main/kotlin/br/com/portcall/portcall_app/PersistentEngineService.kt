@@ -142,11 +142,27 @@ class PersistentEngineService : Service() {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL)
+            // Sempre `specialUse`, nunca `phoneCall` — e o tipo tem que
+            // bater com o declarado no AndroidManifest, que também é só
+            // `specialUse`. Ver lá o porquê: com `phoneCall` declarado, o
+            // Android 15+ recusa o start vindo do BOOT_COMPLETED mesmo
+            // quando o startForeground pede outro tipo, e o Service entra
+            // num ciclo de crash e recuo que deixa o ramal fora do ar.
+            //
+            // Em aparelhos sem `specialUse` (abaixo do Android 14) o tipo
+            // não existe; ali `phoneCall` ainda é válido e a restrição do
+            // boot nem se aplica.
+            val tipo = if (Build.VERSION.SDK_INT >= 34) {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            } else {
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL
+            }
+            startForeground(NOTIFICATION_ID, notification, tipo)
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
     }
+
 
     @Suppress("DEPRECATION")
     private fun acquireWakeLock() {

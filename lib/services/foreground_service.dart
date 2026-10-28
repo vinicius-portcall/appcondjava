@@ -42,6 +42,7 @@ class ForegroundService {
     await _channel.invokeMethod('stop');
   }
 
+
   static Future<void> requestIgnoreBatteryOptimizations() async {
     if (!_disponivel) return;
     final ignorando =
