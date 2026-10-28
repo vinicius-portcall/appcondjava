@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../models/unidade.dart';
 import '../services/api_service.dart';
 import '../services/session_service.dart';
 import '../services/sip_service.dart';
@@ -10,14 +11,18 @@ import 'bloqueios_screen.dart';
 /// busca de unidade), igual discagem manual.
 class ApartamentosScreen extends StatelessWidget {
   final SipService sip;
-  final List<String> apartamentos;
+
+  /// As unidades com o nome do morador quando o painel tiver um cadastrado
+  /// (coluna `nome` de `rotas_horarios`, opcional). Em condomínio sem nomes
+  /// preenchidos, a lista é a mesma de sempre — só os números.
+  final List<Unidade> unidades;
   final ApiService api;
   final SipAccount conta;
 
   const ApartamentosScreen({
     super.key,
     required this.sip,
-    required this.apartamentos,
+    required this.unidades,
     required this.api,
     required this.conta,
   });
@@ -59,16 +64,22 @@ class ApartamentosScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: apartamentos.isEmpty
+      body: unidades.isEmpty
           ? const Center(child: Text('Nenhuma unidade cadastrada.'))
           : ListView.separated(
-              itemCount: apartamentos.length,
+              itemCount: unidades.length,
               separatorBuilder: (_, _) => const Divider(height: 1),
               itemBuilder: (context, i) {
-                final apto = apartamentos[i];
+                final unidade = unidades[i];
+                final apto = unidade.apartamento;
+                final nome = unidade.nome;
                 return ListTile(
                   leading: const Text('🏠', style: TextStyle(fontSize: 24)),
                   title: Text('Unidade $apto'),
+                  // O nome do morador é opcional no painel: condomínio que
+                  // não cadastrar nenhum vê a lista exatamente como antes,
+                  // sem um subtítulo vazio ocupando espaço.
+                  subtitle: nome == null ? null : Text(nome),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [

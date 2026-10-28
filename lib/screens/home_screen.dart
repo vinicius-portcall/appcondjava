@@ -13,6 +13,7 @@ import '../models/branding.dart';
 import '../models/documento.dart';
 import '../models/manutencao.dart';
 import '../models/modulos_app.dart';
+import '../models/unidade.dart';
 import '../services/api_service.dart';
 import '../services/foreground_service.dart';
 import '../services/push_service.dart';
@@ -68,6 +69,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Branding _branding = Branding.fallback();
   List<AppButton> _botoes = [];
   List<String> _apartamentos = [];
+
+  /// Com o nome do morador quando o painel tiver cadastrado (opcional).
+  /// Mantida em paralelo a `_apartamentos` porque telas como a Ouvidoria só
+  /// precisam dos números, não dos nomes.
+  List<Unidade> _unidades = [];
   List<Aviso> _avisos = [];
   List<Manutencao> _manutencoes = [];
   List<Documento> _documentos = [];
@@ -219,14 +225,23 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _recarregarDados() async {
     Branding branding;
     try {
-      branding = await _api.fetchBranding(widget.conta.ramal, widget.conta.senha);
+      branding = await _api.fetchBranding(
+        widget.conta.ramal,
+        widget.conta.senha,
+      );
       unawaited(SessionService().saveBranding(branding));
     } catch (_) {
       branding = await SessionService().loadBranding() ?? Branding.fallback();
     }
     final resultado = await _api
         .fetchBotoes(widget.conta.ramal, widget.conta.senha)
-        .catchError((_) => (botoes: <AppButton>[], apartamentos: <String>[]));
+        .catchError(
+          (_) => (
+            botoes: <AppButton>[],
+            apartamentos: <String>[],
+            unidades: <Unidade>[],
+          ),
+        );
     final avisos = await _api
         .fetchAvisos(widget.conta.ramal, widget.conta.senha)
         .catchError((_) => <Aviso>[]);
@@ -245,6 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _branding = branding;
       _botoes = resultado.botoes;
       _apartamentos = resultado.apartamentos;
+      _unidades = resultado.unidades;
       _avisos = avisos;
       _manutencoes = manutencoes;
       _documentos = documentos;
@@ -522,7 +538,7 @@ class _HomeScreenState extends State<HomeScreen> {
       MaterialPageRoute(
         builder: (_) => ApartamentosScreen(
           sip: _sip,
-          apartamentos: _apartamentos,
+          unidades: _unidades,
           api: _api,
           conta: widget.conta,
         ),
@@ -533,11 +549,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _abrirInterfonia() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => InterfoniaScreen(
-          api: _api,
-          conta: widget.conta,
-          sip: _sip,
-        ),
+        builder: (_) =>
+            InterfoniaScreen(api: _api, conta: widget.conta, sip: _sip),
       ),
     );
   }
@@ -663,8 +676,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _abrirCadastroFacial() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            MoradoresFacialScreen(api: _api, conta: widget.conta),
+        builder: (_) => MoradoresFacialScreen(api: _api, conta: widget.conta),
       ),
     );
   }
@@ -672,8 +684,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _abrirHistoricoChamadas() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            HistoricoChamadasScreen(api: _api, conta: widget.conta),
+        builder: (_) => HistoricoChamadasScreen(api: _api, conta: widget.conta),
       ),
     );
   }
@@ -681,11 +692,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _abrirSalasConferencia() {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => SalasConferenciaScreen(
-          api: _api,
-          conta: widget.conta,
-          sip: _sip,
-        ),
+        builder: (_) =>
+            SalasConferenciaScreen(api: _api, conta: widget.conta, sip: _sip),
       ),
     );
   }
@@ -840,10 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _sip.activeCall?.session.direction == Direction.incoming,
                   ),
                   child: const Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
+                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     child: Row(
                       children: [
                         Icon(Icons.call, color: Colors.white),
@@ -914,151 +919,167 @@ class _HomeScreenState extends State<HomeScreen> {
                         mainAxisSpacing: 10,
                         childAspectRatio: 0.92,
                         children: [
-                          if (_liberado(ModulosApp.unidades)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.home_rounded,
-                            cor: colors.tileAccents[0],
-                            titulo: 'Unidades',
-                            subtitulo: _apartamentos.isNotEmpty
-                                ? '${_apartamentos.length}'
-                                : null,
-                            onTap: _apartamentos.isNotEmpty
-                                ? _abrirApartamentos
-                                : null,
-                          ),
-                          if (_liberado(ModulosApp.cameras)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.videocam_rounded,
-                            cor: colors.tileAccents[1],
-                            titulo: 'Câmeras',
-                            onTap: _abrirCameras,
-                          ),
-                          if (_liberado(ModulosApp.mural)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.campaign_rounded,
-                            cor: colors.tileAccents[2],
-                            titulo: 'Mural',
-                            subtitulo: _avisos.isNotEmpty
-                                ? '${_avisos.length}'
-                                : null,
-                            onTap: _abrirMural,
-                          ),
-                          if (_liberado(ModulosApp.manutencoes)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.build_circle_outlined,
-                            cor: colors.tileAccents[3],
-                            titulo: 'Manutenções',
-                            subtitulo: _manutencoes.isNotEmpty
-                                ? '${_manutencoes.length}'
-                                : null,
-                            onTap: _abrirManutencoes,
-                          ),
-                          if (_liberado(ModulosApp.ouvidoria)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.forum_outlined,
-                            cor: colors.tileAccents[4],
-                            titulo: 'Ouvidoria',
-                            onTap: _abrirOuvidoria,
-                          ),
-                          if (_liberado(ModulosApp.encomendas)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.inventory_2_outlined,
-                            cor: colors.tileAccents[5],
-                            titulo: 'Encomendas',
-                            onTap: _abrirEncomendas,
-                          ),
-                          if (_liberado(ModulosApp.documentos)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.description_outlined,
-                            cor: colors.tileAccents[6],
-                            titulo: 'Documentos',
-                            subtitulo: _documentos.isNotEmpty
-                                ? '${_documentos.length}'
-                                : null,
-                            onTap: _abrirDocumentos,
-                          ),
-                          if (_liberado(ModulosApp.acessos)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.door_front_door_outlined,
-                            cor: colors.tileAccents[7],
-                            titulo: 'Acessos',
-                            subtitulo: _historicoAcessos.isNotEmpty
-                                ? '${_historicoAcessos.length}'
-                                : null,
-                            onTap: _abrirHistoricoAcessos,
-                          ),
-                          if (_liberado(ModulosApp.visitantes)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.qr_code_2_rounded,
-                            cor: colors.tileAccents[8],
-                            titulo: 'Visitantes',
-                            onTap: _abrirVisitantesQr,
-                          ),
-                          if (_liberado(ModulosApp.agendamentos)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.pool_rounded,
-                            cor: colors.tileAccents[9],
-                            titulo: 'Agendamentos',
-                            onTap: _abrirAgendamentos,
-                          ),
-                          if (_liberado(ModulosApp.interfonia)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.phone_in_talk_outlined,
-                            cor: colors.tileAccents[1],
-                            titulo: 'Interfonia',
-                            onTap: _abrirInterfonia,
-                          ),
-                          if (_liberado(ModulosApp.ordemChamada)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.swap_vert_rounded,
-                            cor: colors.tileAccents[0],
-                            titulo: 'Ordem de Chamada',
-                            onTap: _abrirRota,
-                          ),
-                          if (_liberado(ModulosApp.bateria)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.battery_alert_rounded,
-                            cor: colors.tileAccents[3],
-                            titulo: 'Bateria',
-                            onTap: _abrirConfiguracoesBateria,
-                          ),
-                          if (_liberado(ModulosApp.facial)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.face_retouching_natural_rounded,
-                            cor: colors.tileAccents[6],
-                            titulo: 'Cadastro Facial',
-                            onTap: _abrirCadastroFacial,
-                          ),
-                          if (_liberado(ModulosApp.reunioes)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.groups_rounded,
-                            cor: colors.tileAccents[7],
-                            titulo: 'Reuniões',
-                            onTap: _abrirSalasConferencia,
-                          ),
-                          if (_liberado(ModulosApp.historicoChamadas)) _tileAcaoRapida(
-                            context,
-                            colors: colors,
-                            icone: Icons.phone_callback_rounded,
-                            cor: colors.tileAccents[0],
-                            titulo: 'Chamadas',
-                            onTap: _abrirHistoricoChamadas,
-                          ),
+                          if (_liberado(ModulosApp.unidades))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.home_rounded,
+                              cor: colors.tileAccents[0],
+                              titulo: 'Unidades',
+                              subtitulo: _apartamentos.isNotEmpty
+                                  ? '${_apartamentos.length}'
+                                  : null,
+                              onTap: _apartamentos.isNotEmpty
+                                  ? _abrirApartamentos
+                                  : null,
+                            ),
+                          if (_liberado(ModulosApp.cameras))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.videocam_rounded,
+                              cor: colors.tileAccents[1],
+                              titulo: 'Câmeras',
+                              onTap: _abrirCameras,
+                            ),
+                          if (_liberado(ModulosApp.mural))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.campaign_rounded,
+                              cor: colors.tileAccents[2],
+                              titulo: 'Mural',
+                              subtitulo: _avisos.isNotEmpty
+                                  ? '${_avisos.length}'
+                                  : null,
+                              onTap: _abrirMural,
+                            ),
+                          if (_liberado(ModulosApp.manutencoes))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.build_circle_outlined,
+                              cor: colors.tileAccents[3],
+                              titulo: 'Manutenções',
+                              subtitulo: _manutencoes.isNotEmpty
+                                  ? '${_manutencoes.length}'
+                                  : null,
+                              onTap: _abrirManutencoes,
+                            ),
+                          if (_liberado(ModulosApp.ouvidoria))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.forum_outlined,
+                              cor: colors.tileAccents[4],
+                              titulo: 'Ouvidoria',
+                              onTap: _abrirOuvidoria,
+                            ),
+                          if (_liberado(ModulosApp.encomendas))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.inventory_2_outlined,
+                              cor: colors.tileAccents[5],
+                              titulo: 'Encomendas',
+                              onTap: _abrirEncomendas,
+                            ),
+                          if (_liberado(ModulosApp.documentos))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.description_outlined,
+                              cor: colors.tileAccents[6],
+                              titulo: 'Documentos',
+                              subtitulo: _documentos.isNotEmpty
+                                  ? '${_documentos.length}'
+                                  : null,
+                              onTap: _abrirDocumentos,
+                            ),
+                          if (_liberado(ModulosApp.acessos))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.door_front_door_outlined,
+                              cor: colors.tileAccents[7],
+                              titulo: 'Acessos',
+                              subtitulo: _historicoAcessos.isNotEmpty
+                                  ? '${_historicoAcessos.length}'
+                                  : null,
+                              onTap: _abrirHistoricoAcessos,
+                            ),
+                          if (_liberado(ModulosApp.visitantes))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.qr_code_2_rounded,
+                              cor: colors.tileAccents[8],
+                              titulo: 'Visitantes',
+                              onTap: _abrirVisitantesQr,
+                            ),
+                          if (_liberado(ModulosApp.agendamentos))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.pool_rounded,
+                              cor: colors.tileAccents[9],
+                              titulo: 'Agendamentos',
+                              onTap: _abrirAgendamentos,
+                            ),
+                          if (_liberado(ModulosApp.interfonia))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.phone_in_talk_outlined,
+                              cor: colors.tileAccents[1],
+                              titulo: 'Interfonia',
+                              onTap: _abrirInterfonia,
+                            ),
+                          if (_liberado(ModulosApp.ordemChamada))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.swap_vert_rounded,
+                              cor: colors.tileAccents[0],
+                              titulo: 'Ordem de Chamada',
+                              onTap: _abrirRota,
+                            ),
+                          if (_liberado(ModulosApp.bateria))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.battery_alert_rounded,
+                              cor: colors.tileAccents[3],
+                              titulo: 'Bateria',
+                              onTap: _abrirConfiguracoesBateria,
+                            ),
+                          if (_liberado(ModulosApp.facial))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.face_retouching_natural_rounded,
+                              cor: colors.tileAccents[6],
+                              titulo: 'Cadastro Facial',
+                              onTap: _abrirCadastroFacial,
+                            ),
+                          if (_liberado(ModulosApp.reunioes))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.groups_rounded,
+                              cor: colors.tileAccents[7],
+                              titulo: 'Reuniões',
+                              onTap: _abrirSalasConferencia,
+                            ),
+                          if (_liberado(ModulosApp.historicoChamadas))
+                            _tileAcaoRapida(
+                              context,
+                              colors: colors,
+                              icone: Icons.phone_callback_rounded,
+                              cor: colors.tileAccents[0],
+                              titulo: 'Chamadas',
+                              onTap: _abrirHistoricoChamadas,
+                            ),
                         ],
                       ),
                       if (botoesDiscar.isNotEmpty) ...[

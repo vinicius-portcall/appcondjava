@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/app_button.dart';
+import '../models/unidade.dart';
 import '../models/aviso.dart';
 import '../models/branding.dart';
 import '../models/acesso_portao.dart';
@@ -49,10 +50,14 @@ class ApiService {
     return Branding.fromJson(json);
   }
 
-  Future<({List<AppButton> botoes, List<String> apartamentos})> fetchBotoes(
-    String ramal,
-    String senha,
-  ) async {
+  Future<
+    ({
+      List<AppButton> botoes,
+      List<String> apartamentos,
+      List<Unidade> unidades,
+    })
+  >
+  fetchBotoes(String ramal, String senha) async {
     final res = await http
         .get(_uri('api_botoes.php', {'ramal': ramal, 'senha': senha}))
         .timeout(const Duration(seconds: 8));
@@ -71,7 +76,20 @@ class ApiService {
         .map((e) => e.toString())
         .toList();
 
-    return (botoes: lista, apartamentos: apartamentos);
+    // `unidades` traz o nome do morador junto do número; `apartamentos` é a
+    // lista de strings que sempre existiu. Os dois vêm na mesma resposta de
+    // propósito: um painel antigo não manda `unidades`, e aí caímos no
+    // formato velho sem nome — melhor a tela funcionar sem nomes do que não
+    // funcionar.
+    final unidadesJson = json['unidades'] as List<dynamic>?;
+    final unidades = unidadesJson == null
+        ? apartamentos.map(Unidade.semNome).toList()
+        : unidadesJson
+              .map((e) => Unidade.fromJson(e as Map<String, dynamic>))
+              .where((u) => u.apartamento.isNotEmpty)
+              .toList();
+
+    return (botoes: lista, apartamentos: apartamentos, unidades: unidades);
   }
 
   Future<List<Aviso>> fetchAvisos(String ramal, String senha) async {
@@ -357,9 +375,8 @@ class ApiService {
       );
     }
 
-    List<String> lista(String chave) => (json[chave] as List<dynamic>? ?? [])
-        .map((e) => e.toString())
-        .toList();
+    List<String> lista(String chave) =>
+        (json[chave] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
 
     return (
       disponivel: true,
@@ -779,18 +796,17 @@ class ApiService {
     required String nome,
     required File foto,
   }) async {
-    final request = http.MultipartRequest(
-      'POST',
-      _uri('api_facial_moradores_cadastrar.php'),
-    )
-      ..fields['ramal'] = ramal
-      ..fields['senha'] = senha
-      ..fields['nome'] = nome
-      ..files.add(await http.MultipartFile.fromPath('foto', foto.path));
+    final request =
+        http.MultipartRequest(
+            'POST',
+            _uri('api_facial_moradores_cadastrar.php'),
+          )
+          ..fields['ramal'] = ramal
+          ..fields['senha'] = senha
+          ..fields['nome'] = nome
+          ..files.add(await http.MultipartFile.fromPath('foto', foto.path));
 
-    final streamed = await request.send().timeout(
-      const Duration(seconds: 25),
-    );
+    final streamed = await request.send().timeout(const Duration(seconds: 25));
     final res = await http.Response.fromStream(streamed);
 
     final json = jsonDecode(res.body) as Map<String, dynamic>;
