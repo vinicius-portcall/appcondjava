@@ -125,6 +125,16 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// Nome amigável do destino de uma chamada que sai daqui. Ver [ligarPara].
   String? _nomeDestino;
 
+  /// A chamada que JÁ encerramos aqui, esperando o sip_ua concordar.
+  ///
+  /// Entre o nosso `desligar()` e o evento final do sip_ua ainda chegam
+  /// eventos dessa sessão. Como `callStateChanged` reatribui `activeCall` a
+  /// cada evento, um deles repunha a chamada que acabara de ser encerrada —
+  /// e a tela de chamada reabria sozinha, com o mesmo ramal, como se fosse
+  /// uma ligação nova. Guardar a referência permite ignorar o que vier
+  /// depois dela.
+  Call? _encerradaLocalmente;
+
   /// Sala de conferência (ver salas_conferencia_screen.dart) usa números
   /// reservados no padrão "9" + 4 dígitos — nunca um apartamento/dialpad
   /// normal. A tela de chamada usa isso pra simplificar os botões (sem
@@ -883,6 +893,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     _atendimentoPendente = false;
     _videoDoAtendimentoPendente = null;
     _recusaPendente = false;
+    _encerradaLocalmente = null;
     cameraDaChamadaUrl = null;
     cameraDaChamadaNome = null;
     mostrandoCamera = false;
@@ -923,6 +934,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     // Pedir o hangup é uma gentileza com o outro lado; o encerramento local
     // é decisão nossa e não pode depender de confirmação que talvez nunca
     // venha.
+    _encerradaLocalmente = chamada;
     _limparEstadoDaChamada();
     callState = CallStateEnum.ENDED;
     _entreUnidades = false;
@@ -979,6 +991,20 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
   @override
   void callStateChanged(Call call, CallState state) {
+    // Chamada que já encerramos aqui: ignora tudo o que ainda chegar dela.
+    //
+    // Sem isto, o `activeCall = call` mais abaixo (que roda a cada evento)
+    // repunha a chamada recém-desligada e a tela reabria sozinha — a
+    // "ligação fantasma do mesmo ramal" logo depois de desligar. Quando o
+    // fim definitivo chega, a marca sai e a sessão é esquecida de vez.
+    if (identical(call, _encerradaLocalmente)) {
+      if (state.state == CallStateEnum.ENDED ||
+          state.state == CallStateEnum.FAILED) {
+        _encerradaLocalmente = null;
+      }
+      return;
+    }
+
     final entrante = call.session.direction == Direction.incoming;
     final aindaTocando =
         state.state == CallStateEnum.PROGRESS ||

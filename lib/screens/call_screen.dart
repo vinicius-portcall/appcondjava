@@ -444,6 +444,16 @@ class _CallScreenState extends State<CallScreen>
     // a realidade em vez de um flag que pode ter corrido errado.
     final comVideo =
         widget.sip.remoteStream?.getVideoTracks().isNotEmpty ?? false;
+
+    // "É uma chamada de vídeo?" — diferente de `comVideo`, que é "a imagem
+    // JÁ está chegando". Serve para esconder a logo assim que se atende: o
+    // vídeo leva um instante para aparecer, e nesse intervalo a marca ficava
+    // por cima da imagem que começava a surgir.
+    final ehVideo =
+        comVideo ||
+        widget.sip.chamadaComVideo ||
+        (widget.chamadaEntrante && widget.sip.ofertaEntranteTemVideo);
+
     final emSalaConferencia = widget.sip.emSalaConferencia;
     // Atalhos de portão só aparecem quando podem ser úteis: falando com a
     // portaria. Numa reunião ou numa ligação pro vizinho, só ocupam espaço.
@@ -579,11 +589,14 @@ class _CallScreenState extends State<CallScreen>
                 const Spacer(),
                 // A marca aparece enquanto a chamada toca — inclusive numa
                 // chamada de vídeo, porque até alguém atender não há imagem
-                // nenhuma chegando e a tela ficaria preta e muda. Depois de
-                // atendida, se houver vídeo ele toma a tela e a marca sai do
-                // caminho; sem vídeo, ela fica (parada) no lugar do antigo
-                // ícone genérico de pessoa.
-                if (!comVideo || _inicioConversa == null) ...[
+                // nenhuma chegando e a tela ficaria preta e muda.
+                //
+                // Depois de atendida numa chamada de vídeo ela SOME, e quem
+                // manda é `chamadaComVideo` (o que foi negociado), não o
+                // stream já ter faixa de vídeo: o vídeo leva um instante
+                // para chegar, e nesse intervalo a logo ficava por cima da
+                // imagem que estava começando a aparecer.
+                if (!ehVideo || _inicioConversa == null) ...[
                   _marcaDaChamada(tocando: _inicioConversa == null),
                   const SizedBox(height: 14),
                   // Quem está do outro lado. Em chamada recebida é o nome que
@@ -614,23 +627,6 @@ class _CallScreenState extends State<CallScreen>
                         : null,
                   ),
                 ),
-                // Cronômetro da conversa. Só existe depois de atender — antes
-                // disso não há o que contar, e um "00:00" parado em tela dá a
-                // impressão de que a chamada já começou.
-                if (_inicioConversa != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    _duracaoTexto,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 17,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                      shadows: comVideo
-                          ? const [Shadow(blurRadius: 8, color: Colors.black)]
-                          : null,
-                    ),
-                  ),
-                ],
                 if (emSalaConferencia && _participantes != null) ...[
                   const SizedBox(height: 8),
                   Container(
@@ -666,6 +662,25 @@ class _CallScreenState extends State<CallScreen>
                   ),
                 ],
                 const Spacer(),
+                // Cronômetro aqui embaixo, perto dos controles, e não no
+                // meio da tela: no meio ele disputa espaço com a imagem da
+                // chamada de vídeo e com o nome de quem está falando. Só
+                // existe depois de atender — um "00:00" parado em tela dá a
+                // impressão de que a conversa já começou.
+                if (_inicioConversa != null) ...[
+                  Text(
+                    _duracaoTexto,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 16,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      shadows: comVideo
+                          ? const [Shadow(blurRadius: 8, color: Colors.black)]
+                          : null,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (!aguardandoAtender &&
                     mostrarAtalhosPortao &&
                     widget.botoesDtmf.isNotEmpty) ...[
