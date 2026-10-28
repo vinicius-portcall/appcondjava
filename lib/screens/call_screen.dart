@@ -31,7 +31,8 @@ class CallScreen extends StatefulWidget {
   State<CallScreen> createState() => _CallScreenState();
 }
 
-class _CallScreenState extends State<CallScreen> {
+class _CallScreenState extends State<CallScreen>
+    with SingleTickerProviderStateMixin {
   final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
 
@@ -52,6 +53,20 @@ class _CallScreenState extends State<CallScreen> {
   int? _participantes;
   late final AppLifecycleListener _lifecycleListener;
 
+  /// Logo do condomínio, do branding que o painel manda. Lida do cache
+  /// (SessionService) e não da rede: a tela de chamada aparece no instante
+  /// em que o interfone toca e não pode esperar uma requisição.
+  String? _logoUrl;
+
+  /// Quando a conversa começou de fato (CONFIRMED). Nulo enquanto só toca.
+  DateTime? _inicioConversa;
+  Timer? _tickDuracao;
+
+  /// Pulsa a logo enquanto a chamada está tocando. Para assim que atende —
+  /// a animação serve para dizer "está chamando agora", e continuar pulsando
+  /// durante a conversa só distrairia.
+  late final AnimationController _pulso;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +85,12 @@ class _CallScreenState extends State<CallScreen> {
         }
       },
     );
+    _pulso = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+    _carregarLogo();
+    _sincronizarDuracao();
     _iniciarRenderers();
     final salaId = widget.sip.idSalaConferencia;
     if (salaId != null) {
@@ -79,6 +100,128 @@ class _CallScreenState extends State<CallScreen> {
         (_) => _atualizarParticipantes(salaId),
       );
     }
+  }
+
+  /// Logo do condomínio dentro de um círculo claro, pulsando enquanto a
+  /// chamada toca.
+  ///
+  /// A logo vem do painel (branding) e cai no ícone do próprio app quando o
+  /// condomínio não cadastrou uma — o app é white-label e nem todo cliente
+  /// sobe logo. `Image.network` com `errorBuilder` pelo mesmo motivo: URL
+  /// quebrada no painel não pode deixar um quadrado vazio no meio da tela de
+  /// chamada.
+  Widget _marcaDaChamada({required bool tocando}) {
+    final url = _logoUrl;
+    final Widget imagem = url == null
+        ? Image.asset('assets/icon/app_icon.png', fit: BoxFit.cover)
+        : Image.network(
+            url,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) =>
+                Image.asset('assets/icon/app_icon.png', fit: BoxFit.cover),
+          );
+
+    final avatar = Container(
+      width: 132,
+      height: 132,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.35),
+            blurRadius: 18,
+          ),
+        ],
+      ),
+      child: ClipOval(child: Padding(padding: const EdgeInsets.all(14), child: imagem)),
+    );
+
+    if (!tocando) return avatar;
+
+    // Dois anéis que crescem e somem, como a onda de um telefone tocando. O
+    // avatar em si não muda de tamanho: logo que estica e encolhe fica
+    // amadora, e a leitura da marca se perde.
+    return AnimatedBuilder(
+      animation: _pulso,
+      builder: (context, child) {
+        return SizedBox(
+          width: 200,
+          height: 200,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              for (final atraso in const [0.0, 0.5])
+                _anelDoPulso((_pulso.value + atraso) % 1.0),
+              child!,
+            ],
+          ),
+        );
+      },
+      child: avatar,
+    );
+  }
+
+  Widget _anelDoPulso(double t) {
+    return Container(
+      width: 132 + (68 * t),
+      height: 132 + (68 * t),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: Colors.white.withValues(alpha: (1 - t) * 0.45),
+          width: 2,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _carregarLogo() async {
+    try {
+      final branding = await SessionService().loadBranding();
+      final url = branding?.logoUrl?.trim();
+      if (!mounted || url == null || url.isEmpty) return;
+      setState(() => _logoUrl = url);
+    } catch (_) {
+      // Sem logo cai no ícone do próprio app — ver _marcaDaChamada().
+    }
+  }
+
+  /// Liga e desliga o cronômetro conforme a chamada é atendida ou encerrada.
+  ///
+  /// Chamado do listener do SIP, não do build: o build roda a cada frame da
+  /// animação, e criar um Timer ali ligaria um novo a cada pulso.
+  void _sincronizarDuracao() {
+    final emConversa =
+        widget.sip.callState == CallStateEnum.CONFIRMED ||
+        widget.sip.callState == CallStateEnum.ACCEPTED;
+
+    if (emConversa && _inicioConversa == null) {
+      _inicioConversa = DateTime.now();
+      // Para de pulsar: a animação diz "está chamando", e a chamada já foi
+      // atendida.
+      _pulso.stop();
+      _tickDuracao = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (mounted) setState(() {});
+      });
+    } else if (!emConversa && _inicioConversa != null) {
+      _inicioConversa = null;
+      _tickDuracao?.cancel();
+      _tickDuracao = null;
+    }
+  }
+
+  /// mm:ss, virando h:mm:ss só quando passa de uma hora — chamada de
+  /// interfone raramente chega lá, e mostrar "00:" na frente o tempo todo
+  /// rouba atenção de um número que a pessoa olha de relance.
+  String get _duracaoTexto {
+    final inicio = _inicioConversa;
+    if (inicio == null) return '';
+    final d = DateTime.now().difference(inicio);
+    String doisDigitos(int n) => n.toString().padLeft(2, '0');
+    final mm = doisDigitos(d.inMinutes.remainder(60));
+    final ss = doisDigitos(d.inSeconds.remainder(60));
+    return d.inHours > 0 ? '${d.inHours}:$mm:$ss' : '$mm:$ss';
   }
 
   Future<void> _atualizarParticipantes(int salaId) async {
@@ -180,12 +323,15 @@ class _CallScreenState extends State<CallScreen> {
     // terminar — consumindo dados móveis do morador em segundo plano.
     _erroCameraSub?.cancel();
     _cameraPlayer?.dispose();
+    _tickDuracao?.cancel();
+    _pulso.dispose();
     super.dispose();
   }
 
   void _onSipChange() {
     if (!mounted) return;
     _atualizarStreams();
+    _sincronizarDuracao();
     setState(() {});
     if (!widget.sip.emChamada) {
       Navigator.of(context).maybePop();
@@ -431,13 +577,32 @@ class _CallScreenState extends State<CallScreen> {
             Column(
               children: [
                 const Spacer(),
-                if (!comVideo) ...[
-                  Icon(
-                    Icons.person,
-                    size: 96,
-                    color: Colors.white.withValues(alpha: 0.8),
-                  ),
-                  const SizedBox(height: 16),
+                // A marca aparece enquanto a chamada toca — inclusive numa
+                // chamada de vídeo, porque até alguém atender não há imagem
+                // nenhuma chegando e a tela ficaria preta e muda. Depois de
+                // atendida, se houver vídeo ele toma a tela e a marca sai do
+                // caminho; sem vídeo, ela fica (parada) no lugar do antigo
+                // ícone genérico de pessoa.
+                if (!comVideo || _inicioConversa == null) ...[
+                  _marcaDaChamada(tocando: _inicioConversa == null),
+                  const SizedBox(height: 14),
+                  // Quem está do outro lado. Em chamada recebida é o nome que
+                  // o servidor montou no CALLERID ("Interfone Portão",
+                  // "Unidade 102"); numa chamada que sai daqui, o destino.
+                  if (widget.sip.nomeDaChamada.isNotEmpty)
+                    Text(
+                      widget.sip.nomeDaChamada,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                        shadows: comVideo
+                            ? const [Shadow(blurRadius: 8, color: Colors.black)]
+                            : null,
+                      ),
+                    ),
+                  const SizedBox(height: 6),
                 ],
                 Text(
                   _statusTexto(estado),
@@ -449,6 +614,23 @@ class _CallScreenState extends State<CallScreen> {
                         : null,
                   ),
                 ),
+                // Cronômetro da conversa. Só existe depois de atender — antes
+                // disso não há o que contar, e um "00:00" parado em tela dá a
+                // impressão de que a chamada já começou.
+                if (_inicioConversa != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    _duracaoTexto,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 17,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                      shadows: comVideo
+                          ? const [Shadow(blurRadius: 8, color: Colors.black)]
+                          : null,
+                    ),
+                  ),
+                ],
                 if (emSalaConferencia && _participantes != null) ...[
                   const SizedBox(height: 8),
                   Container(

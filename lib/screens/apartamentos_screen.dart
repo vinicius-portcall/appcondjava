@@ -29,7 +29,7 @@ class ApartamentosScreen extends StatelessWidget {
 
   Future<void> _ligar(
     BuildContext context,
-    String apto, {
+    Unidade unidade, {
     bool video = false,
   }) async {
     if (!sip.isRegistered) {
@@ -44,7 +44,14 @@ class ApartamentosScreen extends StatelessWidget {
     }
     // entreUnidades esconde os atalhos de portão na tela de chamada —
     // ver SipService.chamadaEntreUnidades.
-    await sip.ligarPara(apto, video: video, entreUnidades: true);
+    // O nome do morador (opcional no painel) vai junto para a tela de
+    // chamada mostrar "102 — João Silva" em vez de só o número.
+    await sip.ligarPara(
+      unidade.apartamento,
+      video: video,
+      entreUnidades: true,
+      nomeExibicao: unidade.rotulo,
+    );
   }
 
   @override
@@ -85,12 +92,12 @@ class ApartamentosScreen extends StatelessWidget {
                     children: [
                       IconButton(
                         tooltip: 'Chamada normal',
-                        onPressed: () => _ligar(context, apto),
+                        onPressed: () => _ligar(context, unidade),
                         icon: const Icon(Icons.call),
                       ),
                       IconButton(
                         tooltip: 'Chamada de vídeo',
-                        onPressed: () => _ligar(context, apto, video: true),
+                        onPressed: () => _ligar(context, unidade, video: true),
                         icon: const Icon(Icons.videocam),
                       ),
                     ],

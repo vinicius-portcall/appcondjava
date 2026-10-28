@@ -102,6 +102,29 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   bool altoFalante = false;
   String? _ultimoDestino;
 
+  /// Quem está do outro lado, para a tela de chamada mostrar.
+  ///
+  /// Na chamada recebida é o nome que o servidor montou no CALLERID — o
+  /// `portcall_router.agi` manda "Interfone Portão" ou "Unidade 102", que é
+  /// o que o morador reconhece; o ramal cru (5000) não diz nada a ele. Numa
+  /// chamada que sai daqui é o destino discado.
+  ///
+  /// Vazio quando não há chamada, e a tela simplesmente não mostra a linha.
+  ///
+  /// Na chamada que sai daqui, o nome do morador vem da unidade escolhida na
+  /// tela (campo opcional da rota, no painel) — "102 — João Silva" em vez de
+  /// só "102". Quem disca pelo teclado não tem nome a informar e continua
+  /// vendo o número.
+  String get nomeDaChamada =>
+      _nomeEntrante ??
+      _nomeDestino ??
+      _ultimoDestino ??
+      _numeroEntrante ??
+      '';
+
+  /// Nome amigável do destino de uma chamada que sai daqui. Ver [ligarPara].
+  String? _nomeDestino;
+
   /// Sala de conferência (ver salas_conferencia_screen.dart) usa números
   /// reservados no padrão "9" + 4 dígitos — nunca um apartamento/dialpad
   /// normal. A tela de chamada usa isso pra simplificar os botões (sem
@@ -193,19 +216,30 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     return null;
   }
 
+  /// Lê quem está ligando da sessão SIP. SÍNCRONO de propósito.
+  ///
+  /// Isto ficava dentro de `_mostrarChamadaEntrante`, depois de um `await` —
+  /// e o `notifyListeners()` do `callStateChanged` já tinha rodado antes,
+  /// então a tela de chamada abria com o nome ainda vazio e nada a
+  /// atualizava depois. Não incomodava enquanto o nome não era exibido;
+  /// passou a aparecer como "chamada sem o nome de quem liga".
+  void _identificarQuemLiga(Call call) {
+    final remoteId = call.session.remote_identity;
+    final numero = remoteId?.uri?.user;
+    _numeroEntrante = numero;
+    _nomeEntrante = (remoteId?.display_name?.isNotEmpty == true)
+        ? remoteId!.display_name!
+        : (numero ?? 'Desconhecido');
+  }
+
   Future<void> _mostrarChamadaEntrante(Call call) async {
     final idDoPush = await _chamadaJaReportadaPeloPush();
     _callKitId = idDoPush ?? _uuid.v4();
-    final remoteId = call.session.remote_identity;
-    final numero = remoteId?.uri?.user;
-    final nome = (remoteId?.display_name?.isNotEmpty == true)
-        ? remoteId!.display_name!
-        : (numero ?? 'Desconhecido');
+    final numero = _numeroEntrante;
+    final nome = _nomeEntrante ?? numero ?? 'Desconhecido';
 
-    // Guardados pra notificação de chamada perdida: quando a chamada termina,
-    // a sessão já foi embora e não dá mais pra ler quem era.
-    _nomeEntrante = nome;
-    _numeroEntrante = numero;
+    // Nome e número já foram lidos em _identificarQuemLiga, antes do await
+    // acima — ver lá o porquê. Aqui só se zera o que é desta chamada.
     _entranteAtendida = false;
     _entranteRecusada = false;
 
@@ -558,14 +592,19 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
   /// [entreUnidades] marca ligação de morador pra morador (tela Unidades) —
   /// ver `chamadaEntreUnidades`.
+  /// [nomeExibicao] é quem a tela de chamada vai mostrar no lugar do número
+  /// cru. Opcional: quem liga pelo teclado não tem nome nenhum para dar, e
+  /// aí continua aparecendo o número discado.
   Future<bool> ligarPara(
     String destino, {
     bool video = false,
     bool entreUnidades = false,
+    String? nomeExibicao,
   }) async {
     chamadaComVideo = video;
     muted = false;
     _ultimoDestino = destino;
+    _nomeDestino = nomeExibicao?.trim().isEmpty == true ? null : nomeExibicao;
     _entreUnidades = entreUnidades;
     // Com vídeo, não dá pra ver a tela com o telefone no ouvido — liga o
     // viva-voz (ou fone bluetooth, se tiver um conectado) de cara. Sem
@@ -677,6 +716,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     chamadaComVideo = comVideo;
     muted = false;
     _ultimoDestino = null;
+    _nomeDestino = null;
     // NÃO zera _entreUnidades aqui: numa chamada recebida ele já foi
     // definido em callStateChanged, a partir do CALLERID que o servidor
     // montou. Zerar traria os atalhos de portão de volta justamente na
@@ -827,25 +867,67 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     }
   }
 
+  /// Zera tudo que pertence a UMA chamada.
+  ///
+  /// Chamado dos dois caminhos que encerram uma ligação — o evento
+  /// ENDED/FAILED do sip_ua e o `desligar()` daqui. Ter um lugar só evita
+  /// que um deles limpe pela metade: `emChamada` depende de `activeCall`
+  /// ser nulo, e qualquer campo esquecido vaza para a próxima chamada.
+  void _limparEstadoDaChamada() {
+    _nomeEntrante = null;
+    _numeroEntrante = null;
+    _entranteAtendida = false;
+    _entranteRecusada = false;
+    // Uma intenção de atender que sobrasse aqui faria a PRÓXIMA chamada
+    // ser atendida sozinha, sem ninguém tocar em nada.
+    _atendimentoPendente = false;
+    _videoDoAtendimentoPendente = null;
+    _recusaPendente = false;
+    cameraDaChamadaUrl = null;
+    cameraDaChamadaNome = null;
+    mostrandoCamera = false;
+
+    activeCall = null;
+    localStream = null;
+    remoteStream = null;
+    chamadaComVideo = false;
+    _ofertaEntranteTemVideoCache = false;
+    muted = false;
+    altoFalante = false;
+    _ultimoDestino = null;
+    _nomeDestino = null;
+  }
+
   void desligar() {
     // Mesma corrida de `atender()`, do outro lado: no iPhone dá pra recusar
     // a chamada do push VoIP antes do INVITE chegar. Sem lembrar da recusa,
     // o INVITE chegaria depois e o telefone voltaria a tocar sozinho — uma
     // chamada que o morador já tinha dispensado.
-    if (activeCall == null) {
-      _atendimentoPendente = false;
-      _videoDoAtendimentoPendente = null;
+    final chamada = activeCall;
+    if (chamada == null) {
       _recusaPendente = true;
     }
-    activeCall?.hangup();
-    localStream = null;
-    remoteStream = null;
+    chamada?.hangup();
+
+    // Limpa o estado AQUI, sem esperar o evento ENDED do sip_ua.
+    //
+    // Confiar nesse evento deixava o app preso: quando a sessão já morreu do
+    // lado do sip_ua (resposta 480 do servidor, transporte caído, chamada
+    // que terminou com o app em segundo plano), o ENDED nunca chega,
+    // `activeCall` continua preenchido e `emChamada` fica true para sempre.
+    // A tela de chamada não fecha, o botão de desligar não resolve — e no
+    // Android, onde o engine é persistente, nem fechar e reabrir o app
+    // adianta: o estado sobrevive junto com o engine. Só "Forçar parada"
+    // saía dali.
+    //
+    // Pedir o hangup é uma gentileza com o outro lado; o encerramento local
+    // é decisão nossa e não pode depender de confirmação que talvez nunca
+    // venha.
+    _limparEstadoDaChamada();
+    callState = CallStateEnum.ENDED;
+    _entreUnidades = false;
+
     unawaited(_encerrarChamadaKit());
-    // Sem isso, apertar "desligar" numa CallScreen presa (ligação que já
-    // tinha terminado em segundo plano, sem app em primeiro plano pra
-    // renderizar o pop automático) não fazia nada: activeCall já era null,
-    // hangup() virava no-op, e sem notifyListeners() o _onSipChange da tela
-    // nunca rodava de novo pra tentar o Navigator.pop() sozinho.
     notifyListeners();
   }
 
@@ -946,6 +1028,12 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       }
     }
 
+    // Antes de qualquer await: a tela de chamada é montada no
+    // notifyListeners() do fim deste método, e precisa do nome já aqui.
+    if (entrante && aindaTocando) {
+      _identificarQuemLiga(call);
+    }
+
     if (entrante && aindaTocando && _callKitId == null) {
       unawaited(_mostrarChamadaEntrante(call));
     }
@@ -1011,27 +1099,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       if (entrante && !_entranteAtendida && !_entranteRecusada) {
         unawaited(_notificarChamadaPerdida());
       }
-      _nomeEntrante = null;
-      _numeroEntrante = null;
-      _entranteAtendida = false;
-      _entranteRecusada = false;
-      // Uma intenção de atender que sobrasse aqui faria a PRÓXIMA chamada
-      // ser atendida sozinha, sem ninguém tocar em nada.
-      _atendimentoPendente = false;
-      _videoDoAtendimentoPendente = null;
-      _recusaPendente = false;
-      cameraDaChamadaUrl = null;
-      cameraDaChamadaNome = null;
-      mostrandoCamera = false;
-
-      activeCall = null;
-      localStream = null;
-      remoteStream = null;
-      chamadaComVideo = false;
-      _ofertaEntranteTemVideoCache = false;
-      muted = false;
-      altoFalante = false;
-      _ultimoDestino = null;
+      _limparEstadoDaChamada();
       _entreUnidades = false;
       unawaited(_encerrarChamadaKit());
     }
