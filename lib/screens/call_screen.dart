@@ -192,9 +192,11 @@ class _CallScreenState extends State<CallScreen>
   /// Chamado do listener do SIP, não do build: o build roda a cada frame da
   /// animação, e criar um Timer ali ligaria um novo a cada pulso.
   void _sincronizarDuracao() {
-    final emConversa =
-        widget.sip.callState == CallStateEnum.CONFIRMED ||
-        widget.sip.callState == CallStateEnum.ACCEPTED;
+    // `conversaIniciada`, não `callState == CONFIRMED`: o estado guarda o
+    // último evento recebido, e o STREAM chega depois do CONFIRMED e o
+    // sobrescreve. Testar o estado atual dava "ainda não atendeu" no meio da
+    // conversa — a logo ficava sobre o vídeo e o cronômetro não aparecia.
+    final emConversa = widget.sip.conversaIniciada;
 
     if (emConversa && _inicioConversa == null) {
       _inicioConversa = DateTime.now();

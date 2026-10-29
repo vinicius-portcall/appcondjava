@@ -125,6 +125,18 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   /// Nome amigável do destino de uma chamada que sai daqui. Ver [ligarPara].
   String? _nomeDestino;
 
+  /// A conversa começou (alguém atendeu), independente do estado ATUAL.
+  ///
+  /// Não dá para perguntar `callState == CONFIRMED`: o campo guarda o último
+  /// evento recebido, e depois do CONFIRMED ainda chega STREAM (quando a
+  /// faixa de áudio/vídeo aparece), que o sobrescreve. Quem testasse o
+  /// estado atual concluiria que a chamada não foi atendida — foi o que
+  /// deixou a logo em cima do vídeo e escondeu o cronômetro durante a
+  /// conversa.
+  ///
+  /// Uma vez marcado, só volta a false quando a chamada termina.
+  bool conversaIniciada = false;
+
   /// A chamada que JÁ encerramos aqui, esperando o sip_ua concordar.
   ///
   /// Entre o nosso `desligar()` e o evento final do sip_ua ainda chegam
@@ -894,6 +906,7 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
     _videoDoAtendimentoPendente = null;
     _recusaPendente = false;
     _encerradaLocalmente = null;
+    conversaIniciada = false;
     cameraDaChamadaUrl = null;
     cameraDaChamadaNome = null;
     mostrandoCamera = false;
@@ -1117,6 +1130,15 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
     activeCall = call;
     callState = state.state;
+
+    // Marca de uma vez que a conversa começou. Ver `conversaIniciada`: o
+    // STREAM chega depois e apagaria essa informação se ela dependesse do
+    // estado atual.
+    if (state.state == CallStateEnum.CONFIRMED ||
+        state.state == CallStateEnum.ACCEPTED) {
+      conversaIniciada = true;
+    }
+
     if (state.state == CallStateEnum.ENDED ||
         state.state == CallStateEnum.FAILED) {
       // Chamada que chegou, nunca foi atendida e não foi recusada de
