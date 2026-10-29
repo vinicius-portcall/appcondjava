@@ -199,6 +199,10 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
   }
 
   void _onCallKitEvent(CallEvent? event) {
+    // O CallKit também desliga chamada (recusa, tempo esgotado, o botão
+    // vermelho da tela nativa). Registrar aqui mostra quando a queda veio
+    // DELE e não do SIP — da tela as duas são indistinguíveis.
+    debugPrint('[Portcall] CallKit evento: ${event.runtimeType}');
     switch (event) {
       case CallEventActionCallAccept():
         _entranteAtendida = true;
@@ -206,9 +210,27 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       case CallEventActionCallDecline():
         // Recusa deliberada não vira "perdida" — o morador já sabe que
         // ligaram, foi ele quem dispensou.
+        //
+        // Mas só vale enquanto a chamada ainda toca: o próprio endCall()
+        // que mandamos ao encerrar faz o CallKit emitir um "decline" de
+        // volta, e tratá-lo como recusa derrubaria uma conversa em
+        // andamento (ou marcaria como recusada uma chamada já atendida).
+        if (conversaIniciada) break;
         _entranteRecusada = true;
         desligar();
       case CallEventActionCallTimeout():
+        // O CallKit tem um cronômetro próprio (o `duration` que mandamos em
+        // showCallkitIncoming) e avisa "ninguém atendeu" quando ele estoura.
+        // Ele não sabe que o morador atendeu pelo botão do app, então esse
+        // aviso chegava NO MEIO da conversa e derrubava a ligação — medido
+        // no aparelho: chamada atendida às 12:56:56, timeout às 12:57:18,
+        // exatos 30s depois do telefone começar a tocar.
+        //
+        // Timeout só faz sentido para chamada que ninguém atendeu.
+        if (conversaIniciada) {
+          debugPrint('[Portcall] timeout do CallKit ignorado: já em conversa');
+          break;
+        }
         desligar();
       default:
         break;
@@ -1017,6 +1039,18 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
       }
       return;
     }
+
+    // Instrumentação do ciclo de vida da chamada. Cada linha diz QUAL sessão
+    // (o id muda a cada chamada), a direção e o estado — é o que permite
+    // distinguir "chegou uma ligação nova" de "a mesma sessão emitiu outro
+    // evento", que da tela parecem a mesma coisa.
+    debugPrint(
+      '[Portcall] callState ${state.state} '
+      'sessao=${call.id} '
+      'dir=${call.session.direction} '
+      'ativa=${activeCall?.id} '
+      'conversaIniciada=$conversaIniciada',
+    );
 
     final entrante = call.session.direction == Direction.incoming;
     final aindaTocando =
