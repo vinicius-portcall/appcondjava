@@ -405,9 +405,29 @@ class SipService extends ChangeNotifier implements SipUaHelperListener {
 
   Future<void> _encerrarChamadaKit() async {
     final id = _callKitId;
-    if (id == null) return;
     _callKitId = null;
-    await FlutterCallkitIncoming.endCall(id);
+
+    try {
+      if (id != null) await FlutterCallkitIncoming.endCall(id);
+    } catch (e) {
+      debugPrint('[Portcall] endCall($id) falhou: $e');
+    }
+
+    // Rede de segurança: o `endCall` por id às vezes não apaga a interface
+    // do CallKit, e as notificações ficam penduradas na barra depois da
+    // chamada ter acabado. Medido no aparelho, com duas sobrando ao mesmo
+    // tempo — `callkit_ongoing_channel_id` ("Interfone Portão", chamada em
+    // andamento) e `callkit_incoming_channel_id_v2` (chamada tocando) —,
+    // ambas com NO_DISMISS, ou seja, o morador não consegue nem descartar
+    // na mão: ficam ali dizendo que há uma ligação que já terminou.
+    //
+    // `endAllCalls` não depende de id e limpa o que tiver sobrado. É seguro
+    // porque o app trata uma chamada por vez; não há outra para derrubar.
+    try {
+      await FlutterCallkitIncoming.endAllCalls();
+    } catch (e) {
+      debugPrint('[Portcall] endAllCalls() falhou: $e');
+    }
   }
 
   /// Só esconde a notificação/popup nativo, sem mandar broadcast de

@@ -5,6 +5,7 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:sip_ua/sip_ua.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/app_button.dart';
 import '../services/api_service.dart';
@@ -187,6 +188,27 @@ class _CallScreenState extends State<CallScreen>
     }
   }
 
+  /// Segura a tela acesa enquanto houver vídeo na chamada.
+  ///
+  /// Numa chamada de vídeo o morador fica olhando a imagem do interfone sem
+  /// encostar no aparelho, e o Android apaga a tela em 30 segundos — no meio
+  /// da conversa, com a pessoa tentando enxergar quem está na portaria.
+  ///
+  /// Só com vídeo: numa chamada de áudio a tela apagada é o comportamento
+  /// certo (o telefone no ouvido, inclusive, apaga por sensor de
+  /// proximidade), e manter acesa à toa gasta bateria.
+  Future<void> _sincronizarTelaAcesa(bool manterAcesa) async {
+    if (_telaAcesa == manterAcesa) return;
+    _telaAcesa = manterAcesa;
+    try {
+      await WakelockPlus.toggle(enable: manterAcesa);
+    } catch (e) {
+      debugPrint('[Portcall] wakelock falhou: $e');
+    }
+  }
+
+  bool _telaAcesa = false;
+
   /// Liga e desliga o cronômetro conforme a chamada é atendida ou encerrada.
   ///
   /// Chamado do listener do SIP, não do build: o build roda a cada frame da
@@ -327,6 +349,10 @@ class _CallScreenState extends State<CallScreen>
     _cameraPlayer?.dispose();
     _tickDuracao?.cancel();
     _pulso.dispose();
+    // Solta a tela ao sair da chamada. Sem isto o aparelho ficaria aceso
+    // indefinidamente depois de uma ligação de vídeo — o wakelock é do
+    // processo, não da tela, e não cai sozinho quando a tela fecha.
+    unawaited(_sincronizarTelaAcesa(false));
     super.dispose();
   }
 
@@ -334,6 +360,14 @@ class _CallScreenState extends State<CallScreen>
     if (!mounted) return;
     _atualizarStreams();
     _sincronizarDuracao();
+    // Tela acesa só quando há imagem de verdade chegando — enquanto a
+    // chamada apenas toca não faz diferença, e numa chamada de áudio seria
+    // desperdício de bateria.
+    unawaited(
+      _sincronizarTelaAcesa(
+        widget.sip.remoteStream?.getVideoTracks().isNotEmpty ?? false,
+      ),
+    );
     setState(() {});
     if (!widget.sip.emChamada) {
       Navigator.of(context).maybePop();
